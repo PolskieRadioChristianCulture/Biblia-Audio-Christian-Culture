@@ -1,0 +1,6 @@
+{
+  "name": "Biblia Audio – Christian Culture",
+  "description": "Profesjonalne studio do przekształcania rozdziałów biblijnych w radiowe słuchowiska i filmy wideo na YouTube (MP4) z podziałem na role, zsynchronizowanymi napisami, wizualizacją dźwięku i masteringiem emisyjnym dla Christian Culture.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
