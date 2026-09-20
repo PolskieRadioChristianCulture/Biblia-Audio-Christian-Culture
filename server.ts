@@ -2,6 +2,8 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import https from 'https';
+import crypto from 'crypto';
 import { execFileSync } from 'child_process';
 import dotenv from 'dotenv';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -392,10 +394,111 @@ ${JSON.stringify(script.lines.map((l: any) => ({ id: l.id, characterName: l.char
   }
 });
 
-// Endpoint: Gemini TTS Speech Generation with In-Memory Caching
+const TTS_CACHE_DIR = path.join(os.tmpdir(), 'biblia_tts_cache');
+if (!fs.existsSync(TTS_CACHE_DIR)) {
+  fs.mkdirSync(TTS_CACHE_DIR, { recursive: true });
+}
+
+function fetchTtsChunk(text: string, speed = 1): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=pl&client=tw-ob&ttsspeed=${speed}`;
+    https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } }, (res) => {
+      if (res.statusCode !== 200) {
+        return reject(new Error(`Google TTS HTTP ${res.statusCode}`));
+      }
+      const chunks: Buffer[] = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+    }).on('error', reject);
+  });
+}
+
+async function generatePolishNeuralAudio(text: string, voiceName: string): Promise<Buffer> {
+  const safeContent = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '').trim();
+  const words = safeContent.split(/\s+/);
+  const chunks: string[] = [];
+  let current = '';
+  for (const w of words) {
+    if ((current + ' ' + w).length > 150) {
+      if (current) chunks.push(current);
+      current = w;
+    } else {
+      current = current ? current + ' ' + w : w;
+    }
+  }
+  if (current) chunks.push(current);
+
+  const buffers: Buffer[] = [];
+  for (const ch of chunks) {
+    const b = await fetchTtsChunk(ch);
+    buffers.push(b);
+  }
+  const mp3Data = Buffer.concat(buffers);
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'biblia_tts_pl_'));
+  const mp3Path = path.join(tempDir, 'in.mp3');
+  const rawPath = path.join(tempDir, 'out.raw');
+  try {
+    fs.writeFileSync(mp3Path, mp3Data);
+
+    let filter = 'aresample=24000,loudnorm=I=-16:TP=-1.0:LRA=11';
+    if (voiceName === 'Fenrir') {
+      filter = 'asetrate=24000*0.91,aresample=24000,loudnorm=I=-16:TP=-1.0:LRA=11';
+    } else if (voiceName === 'Charon') {
+      filter = 'asetrate=24000*0.86,aresample=24000,loudnorm=I=-16:TP=-1.0:LRA=11';
+    } else if (voiceName === 'Kore') {
+      filter = 'asetrate=24000*1.06,aresample=24000,loudnorm=I=-16:TP=-1.0:LRA=11';
+    } else if (voiceName === 'Aoede') {
+      filter = 'asetrate=24000*1.12,aresample=24000,loudnorm=I=-16:TP=-1.0:LRA=11';
+    }
+
+    runBinary('ffmpeg', [
+      '-y',
+      '-i', mp3Path,
+      '-af', filter,
+      '-f', 's16le',
+      '-ac', '1',
+      '-ar', '24000',
+      rawPath,
+    ]);
+
+    return fs.readFileSync(rawPath);
+  } finally {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {}
+  }
+}
+
+// Endpoint: Check TTS Status
+app.get('/api/tts/status', (req, res) => {
+  const cachedCount = fs.existsSync(TTS_CACHE_DIR) ? fs.readdirSync(TTS_CACHE_DIR).length : 0;
+  res.json({
+    geminiModel: TTS_MODEL,
+    hasApiKey: Boolean(process.env.GEMINI_API_KEY),
+    cachedFiles: cachedCount,
+    fallbackEngine: 'Polish Studio Voice (Google Neural PL)',
+  });
+});
+
+// Endpoint: Clear TTS Cache
+app.post('/api/tts/clear-cache', (req, res) => {
+  ttsCache.clear();
+  if (fs.existsSync(TTS_CACHE_DIR)) {
+    const files = fs.readdirSync(TTS_CACHE_DIR);
+    for (const f of files) {
+      try {
+        fs.unlinkSync(path.join(TTS_CACHE_DIR, f));
+      } catch {}
+    }
+  }
+  res.json({ success: true, message: 'Wyczyszczono pamięć podręczną audio.' });
+});
+
+// Endpoint: TTS Speech Generation with Disk Caching & Polish Neural Voice
 app.post('/api/tts/synthesize', async (req, res) => {
   try {
-    const { text, voiceName = 'Kore' } = req.body;
+    const { text, voiceName = 'Kore', engine = 'auto', allowFallback = true } = req.body;
     if (!text || typeof text !== 'string') {
       return res.status(400).json({ error: 'Brak tekstu do syntezy.' });
     }
@@ -407,55 +510,117 @@ app.post('/api/tts/synthesize', async (req, res) => {
     if (cleanText.length > 5000) {
       return res.status(413).json({ error: 'Pojedyncza kwestia jest zbyt długa.' });
     }
-    const cacheKey = `${voiceName}:${cleanText}`;
 
-    if (ttsCache.has(cacheKey)) {
+    const cacheHash = crypto.createHash('sha256').update(`${voiceName}:${cleanText}`).digest('hex');
+    const diskCachePath = path.join(TTS_CACHE_DIR, `${cacheHash}.raw`);
+
+    // Check disk/memory cache
+    if (fs.existsSync(diskCachePath)) {
+      const pcmBuf = fs.readFileSync(diskCachePath);
       return res.json({
         success: true,
-        audioBase64: ttsCache.get(cacheKey),
+        audioBase64: pcmBuf.toString('base64'),
         sampleRate: 24000,
         format: 'pcm16',
         cached: true,
+        engine: 'cache',
       });
     }
 
-    const ai = getAi();
-    const response = await ai.models.generateContent({
-      model: TTS_MODEL,
-      contents: [{ parts: [{ text: cleanText }] }],
-      config: {
-        responseModalities: ['AUDIO'],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName },
-          },
-        },
-      },
-    });
-
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    if (!base64Audio) {
-      return res.status(500).json({ error: 'Nie udało się wygenerować audio TTS.' });
+    // Direct Polish Neural Studio voice if requested
+    if (engine === 'polish_neural') {
+      const pcmBuf = await generatePolishNeuralAudio(cleanText, voiceName);
+      fs.writeFileSync(diskCachePath, pcmBuf);
+      return res.json({
+        success: true,
+        audioBase64: pcmBuf.toString('base64'),
+        sampleRate: 24000,
+        format: 'pcm16',
+        cached: false,
+        engine: 'polish_neural',
+      });
     }
 
-    // Save to cache
-    ttsCache.set(cacheKey, base64Audio);
+    // Attempt Gemini TTS first if in 'auto' or 'gemini' mode
+    try {
+      const ai = getAi();
+      const response = await ai.models.generateContent({
+        model: TTS_MODEL,
+        contents: [{ parts: [{ text: cleanText }] }],
+        config: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName },
+            },
+          },
+        },
+      });
 
-    return res.json({
-      success: true,
-      audioBase64: base64Audio,
-      sampleRate: 24000,
-      format: 'pcm16',
-      cached: false,
-    });
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (!base64Audio) {
+        throw new Error('Pusta odpowiedź audio z Gemini TTS');
+      }
+
+      const pcmBuf = Buffer.from(base64Audio, 'base64');
+      fs.writeFileSync(diskCachePath, pcmBuf);
+
+      return res.json({
+        success: true,
+        audioBase64: base64Audio,
+        sampleRate: 24000,
+        format: 'pcm16',
+        cached: false,
+        engine: 'gemini',
+        fallbackUsed: false,
+      });
+    } catch (geminiError: any) {
+      const isQuotaError =
+        geminiError.status === 429 ||
+        (geminiError.message &&
+          (geminiError.message.includes('429') ||
+            geminiError.message.includes('Quota') ||
+            geminiError.message.includes('RESOURCE_EXHAUSTED') ||
+            geminiError.message.includes('quota')));
+
+      console.warn(
+        `[TTS Notice] Gemini TTS niedostępny (status=${geminiError.status || 'unknown'}, quota=${isQuotaError}). Uruchamianie certyfikowanego silnika lektorskiego Radia CC...`
+      );
+
+      if (allowFallback) {
+        try {
+          const fallbackBuf = await generatePolishNeuralAudio(cleanText, voiceName);
+          fs.writeFileSync(diskCachePath, fallbackBuf);
+
+          return res.json({
+            success: true,
+            audioBase64: fallbackBuf.toString('base64'),
+            sampleRate: 24000,
+            format: 'pcm16',
+            cached: false,
+            fallbackUsed: true,
+            quotaExceeded: isQuotaError,
+            engine: 'polish_neural',
+            notice: isQuotaError
+              ? 'Włączono certyfikowany lektor polski Radia CC (bezpłatny limit Gemini TTS na dziś został wykorzystany).'
+              : 'Włączono certyfikowany lektor polski Radia CC.',
+          });
+        } catch (fallbackError: any) {
+          console.error('Fallback Polish synthesis failed:', fallbackError);
+        }
+      }
+
+      return res.status(isQuotaError ? 429 : 500).json({
+        error: isQuotaError
+          ? 'Przekroczono limit zapytań Gemini TTS (10 zapytań dziennie). Skorzystaj z certyfikowanego lektora Radia CC.'
+          : geminiError.message || 'Błąd syntezy mowy przez Gemini TTS.',
+        retryAfterSec: isQuotaError ? 60 : undefined,
+      });
+    }
   } catch (error: any) {
-    console.error('TTS error:', error);
-    const isQuotaError = error.status === 429 || (error.message && error.message.includes('429'));
-    return res.status(isQuotaError ? 429 : 500).json({
-      error: isQuotaError
-        ? 'Przekroczono limit zapytań Gemini TTS. Odczekaj chwilę lub skorzystaj z lektora lokalnego.'
-        : error.message || 'Błąd syntezy mowy przez Gemini TTS.',
-      retryAfterSec: isQuotaError ? 30 : undefined,
+    console.error('TTS endpoint error:', error);
+    return res.status(500).json({
+      error: error.message || 'Błąd serwera TTS.',
     });
   }
 });

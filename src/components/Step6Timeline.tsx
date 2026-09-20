@@ -27,11 +27,16 @@ interface Step6TimelineProps {
   onUpdateProject: (updated: Partial<ProductionProject>) => void;
   onProceedToExport: () => void;
   onProceedToVideo: () => void;
-  onSynthesizeAllVoices: () => Promise<void>;
+  onSynthesizeAllVoices: (forceAll?: boolean) => Promise<void>;
   onRenderMasterAudio: () => Promise<void>;
   isSynthesizing: boolean;
   synthesisProgress: { current: number; total: number; currentSpeaker: string };
   isRenderingMaster: boolean;
+  ttsEngine?: 'auto' | 'polish_neural' | 'gemini';
+  onSetTtsEngine?: (engine: 'auto' | 'polish_neural' | 'gemini') => void;
+  onAuditionLine?: (line: any) => void;
+  onSynthesizeSingleLine?: (line: any) => Promise<void>;
+  onClearTtsCache?: () => Promise<void>;
 }
 
 export const Step6Timeline: React.FC<Step6TimelineProps> = ({
@@ -44,6 +49,11 @@ export const Step6Timeline: React.FC<Step6TimelineProps> = ({
   isSynthesizing,
   synthesisProgress,
   isRenderingMaster,
+  ttsEngine = 'auto',
+  onSetTtsEngine,
+  onAuditionLine,
+  onSynthesizeSingleLine,
+  onClearTtsCache,
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentLineIndex, setCurrentLineIndex] = useState(0);
@@ -177,7 +187,7 @@ export const Step6Timeline: React.FC<Step6TimelineProps> = ({
           <div>
             <h3 className="text-sm font-bold text-stone-100 mb-1 flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-amber-400" />
-              <span>Synteza głosów aktorskich (Gemini TTS)</span>
+              <span>Synteza głosów lektorskich i aktorskich</span>
             </h3>
             <p className="text-xs text-stone-400">
               Stan klipów audio: <strong className="text-amber-300">{generatedCount} z {lines.length}</strong> wygenerowanych.
@@ -185,25 +195,37 @@ export const Step6Timeline: React.FC<Step6TimelineProps> = ({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            {onClearTtsCache && (
+              <button
+                type="button"
+                disabled={isSynthesizing || isRenderingMaster}
+                onClick={onClearTtsCache}
+                className="px-3 py-2 rounded-xl text-xs font-semibold bg-stone-800/80 hover:bg-stone-700 text-stone-300 border border-stone-700 transition-colors"
+                title="Wyczyść pamięć podręczną audio i zacznij od nowa"
+              >
+                Wyczyść pamięć audio
+              </button>
+            )}
+
             <button
               type="button"
               disabled={isSynthesizing || isRenderingMaster}
-              onClick={onSynthesizeAllVoices}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md ${
+              onClick={() => onSynthesizeAllVoices(allClipsGenerated)}
+              className={`flex items-center gap-2 px-4 py-2 rounded font-mono text-xs font-bold transition-all shadow-md ${
                 isSynthesizing
-                  ? 'bg-stone-800 text-stone-500 cursor-not-allowed'
-                  : 'bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-600'
+                  ? 'bg-[#252c38] text-stone-500 cursor-not-allowed border border-[#353e4f]'
+                  : 'bg-gradient-to-b from-[#ff8c1a] to-[#d65f00] hover:from-[#ffa033] hover:to-[#e66800] text-black border border-[#ffa33a] shadow-[0_0_14px_rgba(255,122,0,0.4)]'
               }`}
             >
               {isSynthesizing ? (
                 <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-amber-400" />
-                  <span>Synteza w toku...</span>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#ff7a00]" />
+                  <span>SYNTEZA W TOKU...</span>
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-4 h-4 text-amber-400" />
-                  <span>{allClipsGenerated ? 'Przegeneruj głosy' : 'Wygeneruj wszystkie głosy AI'}</span>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>{allClipsGenerated ? 'PRZEGENERUJ GŁOSY (ODŚWIEŻ)' : 'WYGENERUJ WSZYSTKIE GŁOSY AI'}</span>
                 </>
               )}
             </button>
@@ -212,43 +234,90 @@ export const Step6Timeline: React.FC<Step6TimelineProps> = ({
               type="button"
               disabled={isRenderingMaster || isSynthesizing || lines.length === 0}
               onClick={onRenderMasterAudio}
-              className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold transition-all shadow-md ${
+              className={`flex items-center gap-2 px-4 py-2 rounded font-mono text-xs font-bold transition-all shadow-md ${
                 isRenderingMaster
-                  ? 'bg-stone-800 text-stone-500 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-stone-950'
+                  ? 'bg-[#252c38] text-stone-500 cursor-not-allowed border border-[#353e4f]'
+                  : 'bg-gradient-to-b from-[#2ecc71] to-[#219d55] hover:from-[#3df087] hover:to-[#27b361] text-black border border-[#48f28f] shadow-[0_0_14px_rgba(46,204,113,0.4)]'
               }`}
             >
               {isRenderingMaster ? (
                 <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-stone-950" />
-                  <span>Montowanie FFmpeg (-16 LUFS)...</span>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#2ecc71]" />
+                  <span>MONTOWANIE FFmpeg (-16 LUFS)...</span>
                 </>
               ) : (
                 <>
-                  <Disc className="w-4 h-4" />
-                  <span>Zmontuj audycję (Master WAV / MP3)</span>
+                  <Disc className="w-3.5 h-3.5" />
+                  <span>MASTER AUDIO (WAV / MP3)</span>
                 </>
               )}
             </button>
           </div>
         </div>
 
+        {/* Engine Selection Bar */}
+        {onSetTtsEngine && (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-2.5 bg-[#0e1116] border border-[#262f3c] rounded text-xs font-mono">
+            <div className="flex items-center gap-2 text-stone-300">
+              <span className="font-bold text-[#ff8c1a]">GENERATOR SPEECH V3:</span>
+              <span className="text-stone-500 hidden md:inline">wybierz silnik lektorski</span>
+            </div>
+            <div className="flex items-center gap-1 bg-[#161a22] p-0.5 rounded border border-[#2d3644]">
+              <button
+                type="button"
+                onClick={() => onSetTtsEngine('auto')}
+                className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all ${
+                  ttsEngine === 'auto'
+                    ? 'bg-[#ff7a00] text-black shadow-[0_0_8px_rgba(255,122,0,0.5)]'
+                    : 'text-stone-400 hover:text-stone-200'
+                }`}
+                title="Auto: Gemini AI Cloud + inteligentny fallback na Polish Studio Voice"
+              >
+                AUTO (ZALECANY)
+              </button>
+              <button
+                type="button"
+                onClick={() => onSetTtsEngine('polish_neural')}
+                className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all ${
+                  ttsEngine === 'polish_neural'
+                    ? 'bg-[#ff7a00] text-black shadow-[0_0_8px_rgba(255,122,0,0.5)]'
+                    : 'text-stone-400 hover:text-stone-200'
+                }`}
+                title="Lektor Radia CC: polska fonetyka bez limitów API"
+              >
+                PL STUDIO (NO LIMIT)
+              </button>
+              <button
+                type="button"
+                onClick={() => onSetTtsEngine('gemini')}
+                className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all ${
+                  ttsEngine === 'gemini'
+                    ? 'bg-[#ff7a00] text-black shadow-[0_0_8px_rgba(255,122,0,0.5)]'
+                    : 'text-stone-400 hover:text-stone-200'
+                }`}
+                title="Gemini AI Cloud TTS"
+              >
+                GEMINI AI
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Synthesis Progress Bar */}
         {isSynthesizing && (
-          <div className="p-4 bg-stone-950 border border-amber-900/60 rounded-xl space-y-2">
+          <div className="p-3 bg-[#0d1015] border border-[#ff7a00]/40 rounded space-y-1.5 font-mono">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-amber-300 font-semibold flex items-center gap-2">
+              <span className="text-[#ff8c1a] font-bold flex items-center gap-2">
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                Generowanie wypowiedzi: {synthesisProgress.currentSpeaker}
+                RENDERING: {synthesisProgress.currentSpeaker}
               </span>
-              <span className="font-mono text-stone-400">
-                {synthesisProgress.current} / {synthesisProgress.total} (
-                {Math.round((synthesisProgress.current / (synthesisProgress.total || 1)) * 100)}%)
+              <span className="text-stone-400 text-[11px]">
+                {synthesisProgress.current} / {synthesisProgress.total} ({Math.round((synthesisProgress.current / (synthesisProgress.total || 1)) * 100)}%)
               </span>
             </div>
-            <div className="w-full bg-stone-900 rounded-full h-2 overflow-hidden border border-stone-800">
+            <div className="w-full bg-[#171b22] rounded h-2 overflow-hidden border border-[#2b3341]">
               <div
-                className="bg-amber-500 h-full transition-all duration-300 rounded-full"
+                className="bg-gradient-to-r from-[#ff7a00] to-[#00d2d3] h-full transition-all duration-300"
                 style={{
                   width: `${(synthesisProgress.current / (synthesisProgress.total || 1)) * 100}%`,
                 }}
@@ -259,52 +328,54 @@ export const Step6Timeline: React.FC<Step6TimelineProps> = ({
 
         {/* Master rendered status */}
         {project.masterAudioWavUrl && !isRenderingMaster && (
-          <div className="p-3.5 bg-emerald-950/40 border border-emerald-700/60 rounded-xl flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2 text-emerald-300">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>
-                Audycja została pomyślnie zmontowana i zmasterowana w standardzie radiowym (-16 LUFS).
-              </span>
+          <div className="p-2.5 bg-[#0f2117] border border-[#2ecc71]/50 rounded flex items-center justify-between text-xs font-mono">
+            <div className="flex items-center gap-2 text-[#2ecc71]">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>MASTERING UKOŃCZONY: STANDARD RADIOWY EBU R128 (-16 LUFS, 48 kHz / 24-bit).</span>
             </div>
-            <span className="font-mono font-bold text-stone-200">
-              {project.masterAudioWavUrl.includes('wav') ? 'WAV 48kHz / MP3 192k' : 'Gotowy'}
+            <span className="text-stone-300 font-bold">
+              {project.masterAudioWavUrl.includes('wav') ? 'WAV 48kHz / MP3' : 'READY'}
             </span>
           </div>
         )}
       </div>
 
-      {/* Multi-track Timeline Visualizer */}
-      <div className="bg-stone-900/90 border border-stone-800 rounded-2xl p-5 space-y-4 shadow-md">
-        {/* Timeline Header & Transport Controls */}
-        <div className="flex items-center justify-between flex-wrap gap-3 pb-3 border-b border-stone-800">
-          {/* Transport buttons */}
-          <div className="flex items-center gap-2">
+      {/* FL Studio Multi-track Playlist Arranger */}
+      <div className="bg-[#14171e] border border-[#29313f] rounded-xl p-4 space-y-3 shadow-xl">
+        {/* Playlist Header & Transport Strip */}
+        <div className="flex items-center justify-between flex-wrap gap-3 pb-2.5 border-b border-[#232a36]">
+          {/* Playlist Transport buttons */}
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={() => {
                 if (currentLineIndex > 0) playLine(currentLineIndex - 1);
               }}
-              className="p-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-stone-100 border border-stone-700 transition-colors"
+              className="p-1.5 rounded bg-[#1c222c] hover:bg-[#252d3b] text-stone-300 hover:text-white border border-[#2e3746] transition-colors"
               title="Poprzednia kwestia"
             >
-              <SkipBack className="w-4 h-4" />
+              <SkipBack className="w-3.5 h-3.5" />
             </button>
 
             <button
               type="button"
               onClick={handleTogglePlay}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 font-bold text-xs flex items-center gap-2 shadow-md transition-all hover:scale-102"
+              className={`px-3 py-1.5 rounded font-mono font-black text-xs flex items-center gap-1.5 transition-all ${
+                isPlaying
+                  ? 'bg-[#2ecc71] text-black border border-[#38ef7d] shadow-[0_0_12px_rgba(46,204,113,0.7)]'
+                  : 'bg-gradient-to-b from-[#ff8c1a] to-[#d65f00] hover:from-[#ffa033] hover:to-[#e66800] text-black border border-[#ffa33a] shadow-[0_0_12px_rgba(255,122,0,0.5)]'
+              }`}
               title={isPlaying ? 'Pauza' : 'Odtwórz słuchowisko'}
             >
               {isPlaying ? (
                 <>
-                  <Pause className="w-4 h-4 fill-stone-950" />
-                  <span>Pauza</span>
+                  <Pause className="w-3.5 h-3.5 fill-black" />
+                  <span>PAUZA</span>
                 </>
               ) : (
                 <>
-                  <Play className="w-4 h-4 fill-stone-950" />
-                  <span>Odtwórz</span>
+                  <Play className="w-3.5 h-3.5 fill-black" />
+                  <span>ODTWÓRZ</span>
                 </>
               )}
             </button>
@@ -312,10 +383,10 @@ export const Step6Timeline: React.FC<Step6TimelineProps> = ({
             <button
               type="button"
               onClick={handleStop}
-              className="p-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-stone-100 border border-stone-700 transition-colors"
+              className="p-1.5 rounded bg-[#1c222c] hover:bg-[#252d3b] text-stone-300 hover:text-white border border-[#2e3746] transition-colors"
               title="Zatrzymaj"
             >
-              <Square className="w-4 h-4" />
+              <Square className="w-3.5 h-3.5" />
             </button>
 
             <button
@@ -323,22 +394,22 @@ export const Step6Timeline: React.FC<Step6TimelineProps> = ({
               onClick={() => {
                 if (currentLineIndex + 1 < lines.length) playLine(currentLineIndex + 1);
               }}
-              className="p-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-stone-100 border border-stone-700 transition-colors"
+              className="p-1.5 rounded bg-[#1c222c] hover:bg-[#252d3b] text-stone-300 hover:text-white border border-[#2e3746] transition-colors"
               title="Następna kwestia"
             >
-              <SkipForward className="w-4 h-4" />
+              <SkipForward className="w-3.5 h-3.5" />
             </button>
           </div>
 
           {/* Time & Position */}
-          <div className="flex items-center gap-3 text-xs">
-            <span className="font-mono text-amber-300 font-bold bg-stone-950 px-3 py-1.5 rounded-lg border border-stone-800">
-              Kwestia {currentLineIndex + 1} z {lines.length}
+          <div className="flex items-center gap-3 text-xs font-mono">
+            <span className="text-[#38ef7d] font-black bg-[#0a0c10] px-2.5 py-1 rounded border border-[#252c38]">
+              BAR {currentLineIndex + 1}.1 // {lines.length}
             </span>
 
             {/* Zoom Slider */}
             <div className="flex items-center gap-1.5 text-stone-400">
-              <ZoomOut className="w-3.5 h-3.5" />
+              <ZoomOut className="w-3 h-3 text-stone-400" />
               <input
                 type="range"
                 min="0.8"
@@ -346,44 +417,74 @@ export const Step6Timeline: React.FC<Step6TimelineProps> = ({
                 step="0.1"
                 value={zoomLevel}
                 onChange={(e) => setZoomLevel(parseFloat(e.target.value))}
-                className="w-20 accent-amber-500 cursor-pointer"
+                className="w-16 accent-[#ff7a00] cursor-pointer"
               />
-              <ZoomIn className="w-3.5 h-3.5" />
+              <ZoomIn className="w-3 h-3 text-stone-400" />
             </div>
           </div>
         </div>
 
-        {/* Tracks Board */}
-        <div className="space-y-2 overflow-x-auto pb-2 scrollbar-none">
+        {/* FL Studio Playlist Ruler (Bar:Beat measure markers) */}
+        <div className="flex items-center gap-3 min-w-[720px] text-[9px] font-mono text-stone-400 bg-[#0c0e12] px-2 py-1 rounded border border-[#212732]">
+          <span className="w-40 shrink-0 font-bold uppercase tracking-wider text-stone-400">
+            PLAYLIST TRACKS
+          </span>
+          <div className="flex-1 flex justify-between px-1">
+            <span>| 01.1</span>
+            <span>| 02.1</span>
+            <span>| 03.1</span>
+            <span>| 04.1</span>
+            <span>| 05.1</span>
+            <span>| 06.1</span>
+            <span>| 07.1</span>
+            <span>| 08.1</span>
+            <span>| 09.1</span>
+            <span>| 10.1</span>
+          </div>
+        </div>
+
+        {/* FL Studio Playlist Tracks */}
+        <div className="space-y-1.5 overflow-x-auto pb-2 scrollbar-none">
           {/* Track 1: Narrator */}
-          <div className="flex items-center gap-3 min-w-[700px]">
-            <div className="w-36 shrink-0 flex items-center justify-between p-2 rounded-xl bg-amber-950/40 border border-amber-800/40 text-xs">
-              <span className="font-bold text-amber-300">1. Narrator</span>
-              <button
-                type="button"
-                onClick={() => toggleMute('narrator')}
-                className={`p-1 rounded ${mutedTracks.narrator ? 'text-red-400' : 'text-stone-400'}`}
-              >
-                {mutedTracks.narrator ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
-              </button>
+          <div className="flex items-center gap-3 min-w-[720px]">
+            {/* FL Studio Track Header */}
+            <div className="w-40 shrink-0 flex items-center justify-between p-1.5 rounded bg-[#1a1e27] border-l-4 border-l-[#ff9426] border border-[#2c3444] text-[11px] font-mono">
+              <div className="flex items-center gap-1.5">
+                <span className="text-stone-400 text-[10px]">01</span>
+                <span className="font-bold text-white truncate max-w-[75px]">Narrator</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => toggleMute('narrator')}
+                  className={`w-3.5 h-3.5 rounded-full flex items-center justify-center transition-all ${
+                    mutedTracks.narrator
+                      ? 'bg-[#291e20] text-red-400 border border-red-800'
+                      : 'bg-[#2ecc71] shadow-[0_0_8px_#2ecc71]'
+                  }`}
+                  title="Mute Track (Wycisz ścieżkę)"
+                />
+              </div>
             </div>
-            <div className="flex-1 flex gap-1.5 h-9 bg-stone-950/80 rounded-xl p-1 border border-stone-800 overflow-hidden">
+
+            {/* Clips Line */}
+            <div className="flex-1 flex gap-1 h-9 bg-[#0b0e13] rounded p-0.5 border border-[#222935] overflow-hidden">
               {lines.map((line, idx) => {
                 const isNarrator = line.characterId === 'narrator' || line.characterName.toLowerCase().includes('narrator');
                 const isCurrent = currentLineIndex === idx;
-                if (!isNarrator) return <div key={line.id} className="flex-1 opacity-10" />;
+                if (!isNarrator) return <div key={line.id} className="flex-1 opacity-5" />;
                 return (
                   <div
                     key={line.id}
                     onClick={() => playLine(idx)}
-                    className={`flex-1 rounded cursor-pointer transition-all border text-[10px] flex items-center justify-center font-mono ${
+                    className={`flex-1 rounded cursor-pointer transition-all border text-[9px] flex items-center justify-center font-mono relative overflow-hidden ${
                       isCurrent
-                        ? 'bg-amber-500 text-stone-950 border-amber-400 font-bold scale-105'
-                        : 'bg-amber-950/70 border-amber-800/60 text-amber-300 hover:bg-amber-900/60'
+                        ? 'bg-[#ff7a00] text-black border-[#ffa033] font-black scale-105 shadow-[0_0_10px_rgba(255,122,0,0.6)] z-10'
+                        : 'bg-[#2d2217] border-[#593d25] text-[#ff9426] hover:bg-[#3d2e1f]'
                     }`}
                     title={line.text}
                   >
-                    #{idx + 1}
+                    <span className="truncate px-0.5">#{idx + 1}</span>
                   </div>
                 );
               })}
@@ -391,79 +492,111 @@ export const Step6Timeline: React.FC<Step6TimelineProps> = ({
           </div>
 
           {/* Track 2: Characters */}
-          <div className="flex items-center gap-3 min-w-[700px]">
-            <div className="w-36 shrink-0 flex items-center justify-between p-2 rounded-xl bg-blue-950/40 border border-blue-800/40 text-xs">
-              <span className="font-bold text-blue-300">2. Postacie</span>
-              <button
-                type="button"
-                onClick={() => toggleMute('characters')}
-                className={`p-1 rounded ${mutedTracks.characters ? 'text-red-400' : 'text-stone-400'}`}
-              >
-                {mutedTracks.characters ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
-              </button>
+          <div className="flex items-center gap-3 min-w-[720px]">
+            {/* FL Studio Track Header */}
+            <div className="w-40 shrink-0 flex items-center justify-between p-1.5 rounded bg-[#1a1e27] border-l-4 border-l-[#00d2d3] border border-[#2c3444] text-[11px] font-mono">
+              <div className="flex items-center gap-1.5">
+                <span className="text-stone-400 text-[10px]">02</span>
+                <span className="font-bold text-white truncate max-w-[75px]">Postacie</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => toggleMute('characters')}
+                  className={`w-3.5 h-3.5 rounded-full flex items-center justify-center transition-all ${
+                    mutedTracks.characters
+                      ? 'bg-[#291e20] text-red-400 border border-red-800'
+                      : 'bg-[#2ecc71] shadow-[0_0_8px_#2ecc71]'
+                  }`}
+                  title="Mute Track"
+                />
+              </div>
             </div>
-            <div className="flex-1 flex gap-1.5 h-9 bg-stone-950/80 rounded-xl p-1 border border-stone-800 overflow-hidden">
+
+            {/* Clips Line */}
+            <div className="flex-1 flex gap-1 h-9 bg-[#0b0e13] rounded p-0.5 border border-[#222935] overflow-hidden">
               {lines.map((line, idx) => {
                 const isNarrator = line.characterId === 'narrator' || line.characterName.toLowerCase().includes('narrator');
                 const isCurrent = currentLineIndex === idx;
-                if (isNarrator) return <div key={line.id} className="flex-1 opacity-10" />;
+                if (isNarrator) return <div key={line.id} className="flex-1 opacity-5" />;
                 return (
                   <div
                     key={line.id}
                     onClick={() => playLine(idx)}
-                    className={`flex-1 rounded cursor-pointer transition-all border text-[10px] flex items-center justify-center font-mono ${
+                    className={`flex-1 rounded cursor-pointer transition-all border text-[9px] flex items-center justify-center font-mono relative overflow-hidden ${
                       isCurrent
-                        ? 'bg-blue-500 text-stone-950 border-blue-400 font-bold scale-105'
-                        : 'bg-blue-950/70 border-blue-800/60 text-blue-300 hover:bg-blue-900/60'
+                        ? 'bg-[#00d2d3] text-black border-[#48f2f3] font-black scale-105 shadow-[0_0_10px_rgba(0,210,211,0.6)] z-10'
+                        : 'bg-[#12252c] border-[#1d4856] text-[#00d2d3] hover:bg-[#1a343e]'
                     }`}
                     title={`${line.characterName}: ${line.text}`}
                   >
-                    #{idx + 1}
+                    <span className="truncate px-0.5">#{idx + 1}</span>
                   </div>
                 );
               })}
             </div>
           </div>
 
-          {/* Track 3: Music */}
-          <div className="flex items-center gap-3 min-w-[700px]">
-            <div className="w-36 shrink-0 flex items-center justify-between p-2 rounded-xl bg-purple-950/40 border border-purple-800/40 text-xs">
-              <span className="font-bold text-purple-300">3. Muzyka</span>
-              <button
-                type="button"
-                onClick={() => toggleMute('music')}
-                className={`p-1 rounded ${mutedTracks.music ? 'text-red-400' : 'text-stone-400'}`}
-              >
-                {mutedTracks.music ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
-              </button>
+          {/* Track 3: Music Bed */}
+          <div className="flex items-center gap-3 min-w-[720px]">
+            {/* FL Studio Track Header */}
+            <div className="w-40 shrink-0 flex items-center justify-between p-1.5 rounded bg-[#1a1e27] border-l-4 border-l-[#a55eea] border border-[#2c3444] text-[11px] font-mono">
+              <div className="flex items-center gap-1.5">
+                <span className="text-stone-400 text-[10px]">03</span>
+                <span className="font-bold text-white truncate max-w-[75px]">Muzyka</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => toggleMute('music')}
+                  className={`w-3.5 h-3.5 rounded-full flex items-center justify-center transition-all ${
+                    mutedTracks.music
+                      ? 'bg-[#291e20] text-red-400 border border-red-800'
+                      : 'bg-[#2ecc71] shadow-[0_0_8px_#2ecc71]'
+                  }`}
+                  title="Mute Track"
+                />
+              </div>
             </div>
-            <div className="flex-1 h-9 bg-stone-950/80 rounded-xl p-1 border border-stone-800 flex items-center px-3">
-              <div className="w-full h-3 rounded bg-purple-900/40 border border-purple-700/50 flex items-center justify-center text-[9px] text-purple-300">
-                Podkład smyczkowy Christian Culture (ciągły z duckingiem pod Słowo)
+
+            <div className="flex-1 h-9 bg-[#0b0e13] rounded p-1 border border-[#222935] flex items-center px-3">
+              <div className="w-full h-4 rounded bg-[#2c173d] border border-[#5d2b86] flex items-center justify-between px-2 text-[9px] font-mono text-purple-300">
+                <span>WAVEFORM: SAKRALNY PODKŁAD SMYCZKOWY (EBU R128 DUCKED)</span>
+                <span className="text-[8px] text-purple-400">-12 dB AUTO-DUCK</span>
               </div>
             </div>
           </div>
 
           {/* Track 4: SFX */}
-          <div className="flex items-center gap-3 min-w-[700px]">
-            <div className="w-36 shrink-0 flex items-center justify-between p-2 rounded-xl bg-emerald-950/40 border border-emerald-800/40 text-xs">
-              <span className="font-bold text-emerald-300">4. Efekty (SFX)</span>
-              <button
-                type="button"
-                onClick={() => toggleMute('sfx')}
-                className={`p-1 rounded ${mutedTracks.sfx ? 'text-red-400' : 'text-stone-400'}`}
-              >
-                {mutedTracks.sfx ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
-              </button>
+          <div className="flex items-center gap-3 min-w-[720px]">
+            {/* FL Studio Track Header */}
+            <div className="w-40 shrink-0 flex items-center justify-between p-1.5 rounded bg-[#1a1e27] border-l-4 border-l-[#2ecc71] border border-[#2c3444] text-[11px] font-mono">
+              <div className="flex items-center gap-1.5">
+                <span className="text-stone-400 text-[10px]">04</span>
+                <span className="font-bold text-white truncate max-w-[75px]">SFX / FX</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => toggleMute('sfx')}
+                  className={`w-3.5 h-3.5 rounded-full flex items-center justify-center transition-all ${
+                    mutedTracks.sfx
+                      ? 'bg-[#291e20] text-red-400 border border-red-800'
+                      : 'bg-[#2ecc71] shadow-[0_0_8px_#2ecc71]'
+                  }`}
+                  title="Mute Track"
+                />
+              </div>
             </div>
-            <div className="flex-1 flex gap-1.5 h-9 bg-stone-950/80 rounded-xl p-1 border border-stone-800 overflow-hidden">
+
+            <div className="flex-1 flex gap-1 h-9 bg-[#0b0e13] rounded p-0.5 border border-[#222935] overflow-hidden">
               {lines.map((line, idx) => (
                 <div
                   key={line.id}
-                  className={`flex-1 rounded border text-[9px] flex items-center justify-center ${
+                  className={`flex-1 rounded border text-[8px] font-mono flex items-center justify-center ${
                     line.sfxCue
-                      ? 'bg-emerald-950/70 border-emerald-800/60 text-emerald-300'
-                      : 'opacity-10'
+                      ? 'bg-[#132c1c] border-[#226338] text-[#2ecc71]'
+                      : 'opacity-5'
                   }`}
                   title={line.sfxCue || 'Brak efektu'}
                 >
@@ -474,30 +607,92 @@ export const Step6Timeline: React.FC<Step6TimelineProps> = ({
           </div>
         </div>
 
-        {/* Current Active Line Preview */}
+        {/* FL Studio 16-Step Beat Pad Sequencer Strip */}
+        <div className="p-2 bg-[#0b0d12] rounded border border-[#202733] flex items-center justify-between gap-2 overflow-x-auto">
+          <div className="flex items-center gap-1.5 shrink-0 text-[10px] font-mono text-stone-400">
+            <span className="text-[#ff7a00] font-bold">STEP SEQUENCER:</span>
+            <span>BEAT GRID 16</span>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            {Array.from({ length: 16 }).map((_, stepIdx) => {
+              const isOrangeGroup = (stepIdx >= 0 && stepIdx < 4) || (stepIdx >= 8 && stepIdx < 12);
+              const isStepActive = isPlaying && (currentLineIndex % 16 === stepIdx);
+              return (
+                <div
+                  key={`pad-${stepIdx}`}
+                  className={`fl-step-pad ${isOrangeGroup ? 'group-orange' : ''} ${isStepActive ? 'active' : ''}`}
+                  title={`Step ${stepIdx + 1}`}
+                />
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Current Active Line Preview (FL Studio Piano Roll / Clip Inspector) */}
         {lines[currentLineIndex] && (
-          <div className="p-4 bg-stone-950 border border-amber-900/40 rounded-xl space-y-1">
-            <div className="flex items-center justify-between text-xs text-stone-400">
-              <span className="font-bold text-amber-300">
-                {lines[currentLineIndex].characterName} ({lines[currentLineIndex].verseRef})
-              </span>
-              <span className="italic text-stone-500">
-                {lines[currentLineIndex].emotionCue}
-              </span>
+          <div className="p-3 bg-[#0d1016] border border-[#2c3546] rounded space-y-2 font-mono">
+            <div className="flex items-center justify-between text-xs text-stone-400 flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-[#ff8c1a]">
+                  CLIP {currentLineIndex + 1}: {lines[currentLineIndex].characterName}
+                </span>
+                <span className="text-stone-500 font-mono">
+                  [{lines[currentLineIndex].verseRef}]
+                </span>
+                {generatedClips.some((c) => c.lineId === lines[currentLineIndex].id && c.audioBase64) ? (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#102919] text-[#2ecc71] border border-[#206338] flex items-center gap-1">
+                    <CheckCircle2 className="w-2.5 h-2.5" />
+                    PCM 24k READY
+                  </span>
+                ) : (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#1e2430] text-stone-400 border border-[#313b4c]">
+                    PENDING SYNTH
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                {lines[currentLineIndex].emotionCue && (
+                  <span className="text-stone-400 text-[10px] italic">
+                    {lines[currentLineIndex].emotionCue}
+                  </span>
+                )}
+                {onAuditionLine && (
+                  <button
+                    type="button"
+                    onClick={() => onAuditionLine(lines[currentLineIndex])}
+                    className="px-2 py-1 rounded bg-[#1c222c] hover:bg-[#252d3a] text-stone-200 text-xs font-bold flex items-center gap-1 border border-[#313b4c] transition-colors"
+                  >
+                    <Volume2 className="w-3 h-3 text-[#00d2d3]" />
+                    <span>ODSŁUCHAJ</span>
+                  </button>
+                )}
+                {onSynthesizeSingleLine && (
+                  <button
+                    type="button"
+                    disabled={isSynthesizing}
+                    onClick={() => onSynthesizeSingleLine(lines[currentLineIndex])}
+                    className="px-2.5 py-1 rounded bg-gradient-to-b from-[#ff8c1a] to-[#d65f00] hover:from-[#ffa033] hover:to-[#e66800] text-black text-xs font-bold flex items-center gap-1 shadow transition-colors"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    <span>GENERUJ TĘ KWESTIĘ</span>
+                  </button>
+                )}
+              </div>
             </div>
-            <p className="text-sm text-stone-100 font-serif">
+            <p className="text-xs text-stone-200 font-sans leading-relaxed pl-2 border-l-2 border-[#ff7a00]">
               "{lines[currentLineIndex].text}"
             </p>
           </div>
         )}
       </div>
 
-      {/* Bottom Actions to Step 7 Video Studio or Step 8 Export */}
-      <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-stone-800">
+      {/* Bottom Navigation */}
+      <div className="pt-3 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-[#262f3d]">
         <button
           type="button"
           onClick={onProceedToExport}
-          className="text-stone-400 hover:text-stone-200 text-xs font-semibold underline underline-offset-4"
+          className="text-stone-400 hover:text-stone-200 text-xs font-mono underline underline-offset-4"
         >
           Przejdź bezpośrednio do publikacji audio (Krok 8)
         </button>
@@ -505,11 +700,11 @@ export const Step6Timeline: React.FC<Step6TimelineProps> = ({
         <button
           type="button"
           onClick={onProceedToVideo}
-          className="flex items-center gap-2.5 px-7 py-3.5 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-stone-950 text-sm font-extrabold shadow-2xl transition-all hover:scale-105 border border-amber-300/60 ring-2 ring-amber-500/30 animate-pulse"
+          className="flex items-center gap-2 px-6 py-3 rounded bg-gradient-to-b from-[#ff8c1a] to-[#d65f00] hover:from-[#ffa033] hover:to-[#e66800] text-black text-xs font-mono font-black shadow-[0_0_18px_rgba(255,122,0,0.5)] border border-[#ffaa4d] transition-all hover:scale-105"
         >
-          <Video className="w-5 h-5 fill-current" />
-          <span>UTWÓRZ FILM NA YOUTUBE (KROK 7)</span>
-          <ArrowRight className="w-4 h-4 stroke-[2.5]" />
+          <Video className="w-4 h-4 fill-current" />
+          <span>UTWÓRZ WIDEO NA YOUTUBE (KROK 7)</span>
+          <ArrowRight className="w-3.5 h-3.5 stroke-[3]" />
         </button>
       </div>
     </div>

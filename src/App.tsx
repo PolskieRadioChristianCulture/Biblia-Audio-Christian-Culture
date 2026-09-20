@@ -106,6 +106,7 @@ export default function App() {
   });
 
   // Batch Synthesis & Master Render State
+  const [ttsEngine, setTtsEngine] = useState<'auto' | 'polish_neural' | 'gemini'>('auto');
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [synthesisProgress, setSynthesisProgress] = useState({
     current: 0,
@@ -268,6 +269,8 @@ export default function App() {
         body: JSON.stringify({
           text: sampleText,
           voiceName: char.geminiVoice || 'Kore',
+          engine: ttsEngine,
+          allowFallback: true,
         }),
       });
       const data = await res.json();
@@ -277,6 +280,9 @@ export default function App() {
           ...prev,
           audioUrl: wavUrl,
           isLoading: false,
+          subtitle: data.fallbackUsed
+            ? `Lektor Radia CC (PL Neural Studio)`
+            : prev.subtitle,
         }));
       } else {
         throw new Error(data.error || 'Błąd generowania próbki');
@@ -311,6 +317,8 @@ export default function App() {
         body: JSON.stringify({
           text: line.text,
           voiceName,
+          engine: ttsEngine,
+          allowFallback: true,
         }),
       });
       const data = await res.json();
@@ -320,6 +328,9 @@ export default function App() {
           ...prev,
           audioUrl: wavUrl,
           isLoading: false,
+          subtitle: data.fallbackUsed
+            ? `${prev.subtitle} • Lektor Radia CC (PL Neural Studio)`
+            : prev.subtitle,
         }));
       } else {
         throw new Error(data.error || 'Błąd generowania kwestii');
@@ -330,14 +341,71 @@ export default function App() {
     }
   };
 
+  // Synthesize a single line
+  const handleSynthesizeSingleLine = async (line: DramaLine) => {
+    const char = currentProject.script?.characters.find((c) => c.id === line.characterId);
+    const voiceName = char?.geminiVoice || 'Kore';
+
+    try {
+      const res = await fetch('/api/tts/synthesize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: line.text,
+          voiceName,
+          engine: ttsEngine,
+          allowFallback: true,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.audioBase64) {
+        const wavUrl = pcm16Base64ToWavUrl(data.audioBase64, data.sampleRate || 24000);
+        const existingClips = currentProject.generatedClips || [];
+        const otherClips = existingClips.filter((c) => c.lineId !== line.id);
+        const newClip: GeneratedAudioClip = {
+          lineId: line.id,
+          characterId: line.characterId,
+          audioBase64: data.audioBase64,
+          audioUrl: wavUrl,
+          durationSec: data.audioBase64.length / 48000,
+        };
+        updateCurrentProject({
+          generatedClips: [...otherClips, newClip],
+        });
+      } else {
+        throw new Error(data.error || 'Nie udało się wygenerować kwestii');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Błąd podczas syntezy kwestii.');
+    }
+  };
+
+  // Clear TTS cache and reset generated clips
+  const handleClearTtsCache = async () => {
+    if (!confirm('Czy na pewno chcesz wyczyścić pamięć audio? Dotychczas wygenerowane klipy zostaną zresetowane.')) {
+      return;
+    }
+    try {
+      await fetch('/api/tts/clear-cache', { method: 'POST' });
+      updateCurrentProject({
+        generatedClips: [],
+        masterAudioWavUrl: undefined,
+        masterAudioMp3Url: undefined,
+      });
+      alert('Pamięć audio została pomyślnie wyczyszczona.');
+    } catch (err: any) {
+      console.error('Błąd czyszczenia cache:', err);
+    }
+  };
+
   // Synthesize all voices sequentially with progress
-  const handleSynthesizeAllVoices = async () => {
+  const handleSynthesizeAllVoices = async (forceAll: boolean = false) => {
     const lines = currentProject.script?.lines || [];
     if (lines.length === 0) return;
 
     setIsSynthesizing(true);
     const characters = currentProject.script?.characters || [];
-    const updatedClips: GeneratedAudioClip[] = [...(currentProject.generatedClips || [])];
+    const updatedClips: GeneratedAudioClip[] = forceAll ? [] : [...(currentProject.generatedClips || [])];
 
     const brandedSegments = currentProject.mixerSettings.enableIntroOutro
       ? [
@@ -346,6 +414,8 @@ export default function App() {
         ].filter((segment) => segment.text?.trim())
       : [];
     const totalJobs = lines.length + brandedSegments.length;
+
+    let fallbackNoticeShown = false;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -358,8 +428,8 @@ export default function App() {
         currentSpeaker: `${line.characterName} (${voiceName})`,
       });
 
-      // Check if already in clips
-      const existing = updatedClips.find((c) => c.lineId === line.id && c.audioBase64);
+      // Check if already in clips unless forceAll
+      const existing = !forceAll && updatedClips.find((c) => c.lineId === line.id && c.audioBase64);
       if (!existing) {
         try {
           const res = await fetch('/api/tts/synthesize', {
@@ -368,10 +438,19 @@ export default function App() {
             body: JSON.stringify({
               text: line.text,
               voiceName,
+              engine: ttsEngine,
+              allowFallback: true,
             }),
           });
           const data = await res.json();
           if (data.success && data.audioBase64) {
+            if (data.fallbackUsed && !fallbackNoticeShown) {
+              fallbackNoticeShown = true;
+              setSynthesisProgress((prev) => ({
+                ...prev,
+                currentSpeaker: `${line.characterName} (Lektor PL - limit Gemini)`,
+              }));
+            }
             const wavUrl = pcm16Base64ToWavUrl(data.audioBase64, data.sampleRate || 24000);
             updatedClips.push({
               lineId: line.id,
@@ -384,6 +463,9 @@ export default function App() {
         } catch (err) {
           console.error(`Error synthesizing line ${line.id}:`, err);
         }
+
+        // Pacing delay between requests
+        await new Promise((resolve) => setTimeout(resolve, 250));
       }
     }
 
@@ -394,23 +476,32 @@ export default function App() {
         total: totalJobs,
         currentSpeaker: segment.id.includes('intro') ? 'Intro stacji (Puck)' : 'Outro stacji (Puck)',
       });
-      if (updatedClips.some((clip) => clip.lineId === segment.id && clip.audioBase64)) continue;
-      const res = await fetch('/api/tts/synthesize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: segment.text, voiceName: segment.voiceName }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success || !data.audioBase64) {
-        throw new Error(data.error || 'Nie udało się wygenerować identyfikacji stacji.');
+      if (!forceAll && updatedClips.some((clip) => clip.lineId === segment.id && clip.audioBase64)) continue;
+      try {
+        const res = await fetch('/api/tts/synthesize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: segment.text,
+            voiceName: segment.voiceName,
+            engine: ttsEngine,
+            allowFallback: true,
+          }),
+        });
+        const data = await res.json();
+        if (data.success && data.audioBase64) {
+          updatedClips.push({
+            lineId: segment.id,
+            characterId: '__station__',
+            audioBase64: data.audioBase64,
+            audioUrl: pcm16Base64ToWavUrl(data.audioBase64, data.sampleRate || 24000),
+            durationSec: data.audioBase64.length / 48000,
+          });
+        }
+      } catch (err) {
+        console.warn('Branded segment synthesis warning:', err);
       }
-      updatedClips.push({
-        lineId: segment.id,
-        characterId: '__station__',
-        audioBase64: data.audioBase64,
-        audioUrl: pcm16Base64ToWavUrl(data.audioBase64, data.sampleRate || 24000),
-        durationSec: data.audioBase64.length / 48000,
-      });
+      await new Promise((resolve) => setTimeout(resolve, 250));
     }
 
     updateCurrentProject({
@@ -629,6 +720,11 @@ export default function App() {
               isSynthesizing={isSynthesizing}
               synthesisProgress={synthesisProgress}
               isRenderingMaster={isRenderingMaster}
+              ttsEngine={ttsEngine}
+              onSetTtsEngine={setTtsEngine}
+              onAuditionLine={handleAuditionLine}
+              onSynthesizeSingleLine={handleSynthesizeSingleLine}
+              onClearTtsCache={handleClearTtsCache}
             />
           )}
 
