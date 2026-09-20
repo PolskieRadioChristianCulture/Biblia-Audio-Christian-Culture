@@ -12,10 +12,8 @@ import {
   Sparkles,
   ShieldCheck,
   AlertCircle,
-  ExternalLink,
   Video,
   Archive,
-  CheckCircle2,
   UploadCloud,
   Layers,
   Image as ImageIcon,
@@ -41,10 +39,6 @@ export const Step8ExportPublish: React.FC<Step8ExportPublishProps> = ({ project 
   const [zipProgressText, setZipProgressText] = useState<string>('');
   const [isThumbnailModalOpen, setIsThumbnailModalOpen] = useState<boolean>(false);
 
-  // YouTube API publishing state
-  const [publishPrivacy, setPublishPrivacy] = useState<'private' | 'unlisted' | 'public'>('unlisted');
-  const [isPublishingToYt, setIsPublishingToYt] = useState<boolean>(false);
-  const [ytPublishedInfo, setYtPublishedInfo] = useState<{ videoId: string; url: string } | null>(null);
 
   const script = project.script;
   const videoSettings = project.videoSettings;
@@ -74,19 +68,6 @@ export const Step8ExportPublish: React.FC<Step8ExportPublishProps> = ({ project 
       setIsZipping(false);
       setZipProgressText('');
     }
-  };
-
-  // Simulate or execute YouTube API publish
-  const handlePublishToYouTube = () => {
-    setIsPublishingToYt(true);
-    setTimeout(() => {
-      const mockId = `CC-${Date.now().toString().slice(-6)}`;
-      setYtPublishedInfo({
-        videoId: mockId,
-        url: `https://www.youtube.com/watch?v=${mockId}`,
-      });
-      setIsPublishingToYt(false);
-    }, 2000);
   };
 
   return (
@@ -295,7 +276,6 @@ export const Step8ExportPublish: React.FC<Step8ExportPublishProps> = ({ project 
           </h2>
 
           <div className="p-5 bg-stone-900 border border-stone-800 rounded-2xl space-y-4">
-            {/* Channel info */}
             <div className="flex items-center justify-between p-3 bg-stone-950 rounded-xl border border-stone-800">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center font-bold text-white text-xs">
@@ -303,9 +283,9 @@ export const Step8ExportPublish: React.FC<Step8ExportPublishProps> = ({ project 
                 </div>
                 <div>
                   <div className="text-xs font-bold text-stone-200">Christian Culture TV</div>
-                  <div className="text-[10px] text-emerald-400 flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" />
-                    <span>Autoryzacja YouTube Studio aktywna</span>
+                  <div className="text-[10px] text-amber-400 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" />
+                    <span>Publikacja API nie jest jeszcze połączona</span>
                   </div>
                 </div>
               </div>
@@ -348,76 +328,19 @@ export const Step8ExportPublish: React.FC<Step8ExportPublishProps> = ({ project 
               </pre>
             </div>
 
-            {/* Privacy selection */}
-            <div>
-              <label className="text-xs font-semibold text-stone-300 block mb-1.5">
-                Widoczność filmu:
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { id: 'unlisted', label: 'Niepubliczny' },
-                  { id: 'public', label: 'Publiczny' },
-                  { id: 'private', label: 'Prywatny' },
-                ].map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => setPublishPrivacy(p.id as any)}
-                    className={`py-1.5 rounded-xl border text-xs font-semibold transition-all ${
-                      publishPrivacy === p.id
-                        ? 'bg-amber-500 text-stone-950 font-bold border-amber-400'
-                        : 'bg-stone-950 text-stone-400 border-stone-800 hover:border-stone-700'
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
+            <div className="p-3 rounded-xl border border-amber-500/25 bg-amber-500/5 text-[11px] leading-relaxed text-stone-300">
+              Bezpośrednia publikacja pozostaje wyłączona do czasu wdrożenia prawdziwego OAuth i YouTube Data API. Pobierz gotowy pakiet, sprawdź materiał i opublikuj go ręcznie w YouTube Studio.
             </div>
 
-            {/* Publish Button */}
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={handlePublishToYouTube}
-                disabled={isPublishingToYt}
-                className="w-full py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs shadow-lg transition-colors flex items-center justify-center gap-2"
-              >
-                {isPublishingToYt ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Wysyłanie do YouTube...</span>
-                  </>
-                ) : (
-                  <>
-                    <UploadCloud className="w-4 h-4" />
-                    <span>POTWIERDŹ I OPUBLIKUJ NA YOUTUBE</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* Published confirmation */}
-            {ytPublishedInfo && (
-              <div className="p-3 bg-emerald-950/60 border border-emerald-700/50 rounded-xl space-y-1">
-                <div className="flex items-center gap-1.5 text-emerald-300 font-bold text-xs">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>Film został pomyślnie zarejestrowany w YouTube!</span>
-                </div>
-                <p className="text-[11px] text-stone-300">
-                  ID filmu: <span className="font-mono text-amber-300">{ytPublishedInfo.videoId}</span>
-                </p>
-                <a
-                  href={ytPublishedInfo.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-amber-400 hover:underline flex items-center gap-1 pt-1"
-                >
-                  <span>Zobacz w YouTube Studio</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
-            )}
+            <button
+              type="button"
+              disabled
+              className="w-full py-3 rounded-xl bg-stone-800 text-stone-500 font-bold text-xs border border-stone-700 flex items-center justify-center gap-2 cursor-not-allowed"
+              title="Funkcja zostanie aktywowana dopiero po bezpiecznym połączeniu YouTube API"
+            >
+              <UploadCloud className="w-4 h-4" />
+              <span>PUBLIKACJA API — PLANOWANE</span>
+            </button>
           </div>
         </div>
       </div>

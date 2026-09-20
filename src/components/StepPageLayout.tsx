@@ -75,7 +75,7 @@ export const StepPageLayout: React.FC<StepPageLayoutProps> = ({
               <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 flex items-center justify-center shrink-0">
                 <StepIcon className="w-5 h-5" />
               </div>
-              <h1 className="text-xl sm:text-2xl font-bold font-serif text-stone-100 tracking-tight">
+              <h1 className="text-xl sm:text-2xl font-extrabold text-stone-100 tracking-tight">
                 {activeStepDef.title}
               </h1>
             </div>

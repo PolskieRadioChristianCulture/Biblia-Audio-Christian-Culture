@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import dotenv from 'dotenv';
 import { GoogleGenAI, Type } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
@@ -13,6 +13,46 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: '50mb' }));
+
+const apiWindows = new Map<string, { startedAt: number; requests: number }>();
+app.use('/api', (req, res, next) => {
+  const key = req.ip || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  const window = apiWindows.get(key);
+  if (!window || now - window.startedAt > 60_000) {
+    apiWindows.set(key, { startedAt: now, requests: 1 });
+    return next();
+  }
+  window.requests += 1;
+  if (window.requests > 60) {
+    return res.status(429).json({ error: 'Przekroczono limit operacji. Spróbuj ponownie za minutę.' });
+  }
+  next();
+});
+
+const ALLOWED_VOICES = new Set(['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Zephyr']);
+
+function runBinary(binary: 'ffmpeg' | 'ffprobe', args: string[]): string {
+  return execFileSync(binary, args, {
+    env: { ...process.env, PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin' },
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+function normalizeScripture(value: string): string {
+  return value.normalize('NFC').replace(/\s+/g, ' ').trim();
+}
+
+function assertSafeText(value: unknown, field: string, maxLength = 240): string {
+  if (typeof value !== 'string') throw new Error(`${field}: nieprawidłowy tekst.`);
+  const clean = value.normalize('NFC').trim();
+  if (!clean || clean.length > maxLength || /[\u0000-\u001f]/.test(clean)) {
+    throw new Error(`${field}: niedozwolona lub zbyt długa wartość.`);
+  }
+  return clean;
+}
 
 // Configurable model settings
 const SCRIPT_MODEL = process.env.GEMINI_SCRIPT_MODEL || 'gemini-3.8-flash';
@@ -266,6 +306,19 @@ ${customText ? `Pełny tekst źródłowy do wiernego podziału na role (NIE ZMIE
       }));
     }
 
+    if (customText && Array.isArray(parsed.lines)) {
+      const sourceNormalized = normalizeScripture(customText);
+      const outputNormalized = normalizeScripture(parsed.lines.map((line: any) => line.text || '').join(' '));
+      if (sourceNormalized !== outputNormalized) {
+        return res.status(422).json({
+          error: 'Strażnik Słowa zatrzymał analizę: scenariusz nie jest identyczny z tekstem źródłowym.',
+          code: 'SCRIPTURE_INTEGRITY_MISMATCH',
+          sourceLength: sourceNormalized.length,
+          outputLength: outputNormalized.length,
+        });
+      }
+    }
+
     return res.json({ success: true, script: parsed });
   } catch (error: any) {
     console.error('Error generating radio script:', error);
@@ -348,6 +401,12 @@ app.post('/api/tts/synthesize', async (req, res) => {
     }
 
     const cleanText = text.trim();
+    if (!ALLOWED_VOICES.has(voiceName)) {
+      return res.status(400).json({ error: 'Wybrano nieobsługiwany głos TTS.' });
+    }
+    if (cleanText.length > 5000) {
+      return res.status(413).json({ error: 'Pojedyncza kwestia jest zbyt długa.' });
+    }
     const cacheKey = `${voiceName}:${cleanText}`;
 
     if (ttsCache.has(cacheKey)) {
@@ -451,28 +510,25 @@ app.post('/api/audio/render-master', async (req, res) => {
     const outputWavPath = path.join(tempDir, `${prodId}_radio_master.wav`);
     const outputMp3Path = path.join(tempDir, `${prodId}_podcast.mp3`);
 
-    const episodeTitle = (script && script.title) || projectTitle;
+    const episodeTitle = assertSafeText((script && script.title) || projectTitle, 'Tytuł projektu');
     const author = 'Christian Culture';
     const album = 'Biblia Audio Christian Culture';
 
     // 1. Process Master WAV: 48kHz, 24/16-bit stereo, -16 LUFS loudness normalized
-    const ffmpegWavCmd = `ffmpeg -y -f s16le -ar 24000 -ac 1 -i "${concatRawPath}" \
-      -af "loudnorm=I=-16:TP=-1.0:LRA=11,aformat=channel_layouts=stereo" \
-      -ar 48000 -ac 2 "${outputWavPath}"`;
-
-    execSync(ffmpegWavCmd, { stdio: 'pipe' });
+    runBinary('ffmpeg', [
+      '-y', '-f', 's16le', '-ar', '24000', '-ac', '1', '-i', concatRawPath,
+      '-af', 'loudnorm=I=-16:TP=-1.0:LRA=11,aformat=channel_layouts=stereo',
+      '-ar', '48000', '-ac', '2', '-c:a', 'pcm_s24le', outputWavPath,
+    ]);
 
     // 2. Process MP3 Podcast: 44.1kHz, 192kbps stereo with complete ID3 tags
-    const ffmpegMp3Cmd = `ffmpeg -y -i "${outputWavPath}" \
-      -ar 44100 -ac 2 -b:a 192k \
-      -metadata title="${episodeTitle.replace(/"/g, '\\"')}" \
-      -metadata artist="${author}" \
-      -metadata album="${album}" \
-      -metadata comment="https://www.polskieradio.cc - Słowo, które możesz usłyszeć" \
-      -metadata date="${new Date().getFullYear()}" \
-      "${outputMp3Path}"`;
-
-    execSync(ffmpegMp3Cmd, { stdio: 'pipe' });
+    runBinary('ffmpeg', [
+      '-y', '-i', outputWavPath, '-ar', '44100', '-ac', '2', '-b:a', '192k',
+      '-metadata', `title=${episodeTitle}`, '-metadata', `artist=${author}`,
+      '-metadata', `album=${album}`,
+      '-metadata', 'comment=https://www.polskieradio.cc - Słowo, które możesz usłyszeć',
+      '-metadata', `date=${new Date().getFullYear()}`, outputMp3Path,
+    ]);
 
     // Store in memory for download
     renderedProductions.set(prodId, {
@@ -496,7 +552,7 @@ app.post('/api/audio/render-master', async (req, res) => {
       wavSizeBytes: wavStats.size,
       mp3SizeBytes: mp3Stats.size,
       specs: {
-        radioMaster: 'WAV PCM 48kHz / 16-bit Stereo (-16 LUFS)',
+        radioMaster: 'WAV PCM 48kHz / 24-bit Stereo (-16 LUFS)',
         podcast: 'MP3 192kbps 44.1kHz Stereo z tagami ID3',
       },
     });
@@ -637,18 +693,16 @@ app.post('/api/video/render-mp4', async (req, res) => {
       audioWavPath = path.join(tempDir, 'audio_master.wav');
       const rawStats = fs.statSync(rawPath);
       if (rawStats.size > 0) {
-        execSync(`ffmpeg -y -f s16le -ar 24000 -ac 1 -i "${rawPath}" -af "loudnorm=I=-16:TP=-1.0:LRA=11" -ar 48000 -ac 2 "${audioWavPath}"`, { stdio: 'pipe' });
+        runBinary('ffmpeg', ['-y', '-f', 's16le', '-ar', '24000', '-ac', '1', '-i', rawPath, '-af', 'loudnorm=I=-16:TP=-1.0:LRA=11', '-ar', '48000', '-ac', '2', audioWavPath]);
       } else {
-        // Fallback 10s silent master
-        execSync(`ffmpeg -y -f lavfi -i anullsrc=r=48000:cl=stereo -t 10 "${audioWavPath}"`, { stdio: 'pipe' });
+        return res.status(400).json({ error: 'Brak gotowej ścieżki audio. Najpierw wyrenderuj master WAV.' });
       }
     }
 
     // Get exact audio duration
-    const probeCmd = `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioWavPath}"`;
     let durationSec = 10;
     try {
-      const probeOutput = execSync(probeCmd).toString().trim();
+      const probeOutput = runBinary('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', audioWavPath]).trim();
       durationSec = parseFloat(probeOutput) || 10;
     } catch (e) {
       console.warn('ffprobe error, using fallback duration:', e);
@@ -670,10 +724,7 @@ app.post('/api/video/render-mp4', async (req, res) => {
     // If no custom image, render elegant deep biblical canvas
     if (!hasCustomImage) {
       const bgHexColor = videoSettings.mode === 'minimalist' ? '0x100e0c' : '0x1c1917';
-      execSync(
-        `ffmpeg -y -f lavfi -i color=c=${bgHexColor}:s=${width}x${height}:d=1 -vframes 1 "${bgImagePath}"`,
-        { stdio: 'pipe' }
-      );
+      runBinary('ffmpeg', ['-y', '-f', 'lavfi', '-i', `color=c=${bgHexColor}:s=${width}x${height}:d=1`, '-vframes', '1', bgImagePath]);
     }
 
     // 3. Prepare Subtitles file if enabled
@@ -706,7 +757,8 @@ app.post('/api/video/render-mp4', async (req, res) => {
     const outputMp4Path = path.join(tempDir, `${videoId}_youtube.mp4`);
 
     // 5. Construct FFmpeg video filter pipeline
-    const escapedBook = (bookName || 'Ewangelia').replace(/'/g, "\\'").replace(/:/g, '\\:');
+    const safeBook = assertSafeText(bookName || 'Ewangelia', 'Nazwa księgi', 100);
+    const escapedBook = safeBook.replace(/[':%\\]/g, '');
     const escapedChapter = String(chapterNumber || '1');
 
     // Title and branding overlay
@@ -727,14 +779,12 @@ app.post('/api/video/render-mp4', async (req, res) => {
     }
 
     // Render MP4 with H.264 ultrafast and AAC 48kHz
-    const ffmpegRenderCmd = `ffmpeg -y -loop 1 -framerate ${fps} -i "${bgImagePath}" -i "${audioWavPath}" \
-      -vf "${vf}" \
-      -c:v libx264 -preset ultrafast -tune stillimage -pix_fmt yuv420p \
-      -c:a aac -b:a 192k -ar 48000 -ac 2 \
-      -t ${durationSec} \
-      "${outputMp4Path}"`;
-
-    execSync(ffmpegRenderCmd, { stdio: 'pipe' });
+    runBinary('ffmpeg', [
+      '-y', '-loop', '1', '-framerate', String(fps), '-i', bgImagePath, '-i', audioWavPath,
+      '-vf', vf, '-c:v', 'libx264', '-preset', 'medium', '-tune', 'stillimage',
+      '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2',
+      '-t', String(durationSec), '-movflags', '+faststart', outputMp4Path,
+    ]);
 
     const stats = fs.statSync(outputMp4Path);
 

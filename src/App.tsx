@@ -11,6 +11,7 @@ import { Step8ExportPublish } from './components/Step8ExportPublish';
 import { StepPageLayout } from './components/StepPageLayout';
 import { ProjectsManagerModal } from './components/ProjectsManagerModal';
 import { AuditionModal } from './components/AuditionModal';
+import { StudioTransport } from './components/StudioTransport';
 import { DEMO_SCRIPTS } from './data/presets';
 import { DEFAULT_CHARACTER_PROFILES } from './data/videoPresets';
 import { createDefaultVideoSettings, calculateSubtitleCues } from './lib/videoUtils';
@@ -124,7 +125,18 @@ export default function App() {
   // Sync projects to localStorage
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+      const safeProjects = projects.map((project) => ({
+        ...project,
+        generatedClips: project.generatedClips.map((clip) => ({
+          ...clip,
+          audioBase64: '',
+          audioUrl: undefined,
+        })),
+        masterAudioWavUrl: undefined,
+        masterAudioMp3Url: undefined,
+        renderedVideoMp4Url: undefined,
+      }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(safeProjects));
     } catch (e) {
       console.warn('Failed to save projects to localStorage:', e);
     }
@@ -327,6 +339,14 @@ export default function App() {
     const characters = currentProject.script?.characters || [];
     const updatedClips: GeneratedAudioClip[] = [...(currentProject.generatedClips || [])];
 
+    const brandedSegments = currentProject.mixerSettings.enableIntroOutro
+      ? [
+          { id: '__station_intro__', text: currentProject.script.stationIntro, voiceName: 'Puck' },
+          { id: '__station_outro__', text: currentProject.script.stationOutro, voiceName: 'Puck' },
+        ].filter((segment) => segment.text?.trim())
+      : [];
+    const totalJobs = lines.length + brandedSegments.length;
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const char = characters.find((c) => c.id === line.characterId);
@@ -334,7 +354,7 @@ export default function App() {
 
       setSynthesisProgress({
         current: i + 1,
-        total: lines.length,
+        total: totalJobs,
         currentSpeaker: `${line.characterName} (${voiceName})`,
       });
 
@@ -367,6 +387,32 @@ export default function App() {
       }
     }
 
+    for (let i = 0; i < brandedSegments.length; i++) {
+      const segment = brandedSegments[i];
+      setSynthesisProgress({
+        current: lines.length + i + 1,
+        total: totalJobs,
+        currentSpeaker: segment.id.includes('intro') ? 'Intro stacji (Puck)' : 'Outro stacji (Puck)',
+      });
+      if (updatedClips.some((clip) => clip.lineId === segment.id && clip.audioBase64)) continue;
+      const res = await fetch('/api/tts/synthesize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: segment.text, voiceName: segment.voiceName }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success || !data.audioBase64) {
+        throw new Error(data.error || 'Nie udało się wygenerować identyfikacji stacji.');
+      }
+      updatedClips.push({
+        lineId: segment.id,
+        characterId: '__station__',
+        audioBase64: data.audioBase64,
+        audioUrl: pcm16Base64ToWavUrl(data.audioBase64, data.sampleRate || 24000),
+        durationSec: data.audioBase64.length / 48000,
+      });
+    }
+
     updateCurrentProject({
       generatedClips: updatedClips,
       status: 'approved',
@@ -394,6 +440,12 @@ export default function App() {
           pauseAfterMs: line.pauseAfterMs || 700,
         };
       });
+      if (currentProject.mixerSettings.enableIntroOutro) {
+        const intro = clips.find((clip) => clip.lineId === '__station_intro__');
+        const outro = clips.find((clip) => clip.lineId === '__station_outro__');
+        if (intro?.audioBase64) orderedClips.unshift({ base64: intro.audioBase64, pauseAfterMs: 900 });
+        if (outro?.audioBase64) orderedClips.push({ base64: outro.audioBase64, pauseAfterMs: 0 });
+      }
 
       const res = await fetch('/api/audio/render-master', {
         method: 'POST',
@@ -508,8 +560,16 @@ export default function App() {
         onToggleHighContrast={() => setHighContrast(!highContrast)}
       />
 
+      <StudioTransport
+        project={currentProject}
+        currentStep={currentStep}
+        isSynthesizing={isSynthesizing}
+        isRenderingMaster={isRenderingMaster}
+        isRenderingVideo={isRenderingVideo}
+      />
+
       {/* Main Studio Viewport: One Step = One Dedicated Page */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-8">
+      <main className="studio-workspace flex-1 max-w-[1600px] w-full mx-auto px-3 sm:px-5 py-5">
         <StepPageLayout
           currentStep={currentStep}
           project={currentProject}

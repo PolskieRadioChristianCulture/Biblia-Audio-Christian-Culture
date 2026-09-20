@@ -115,12 +115,12 @@ export const Header: React.FC<HeaderProps> = ({
           </a>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-serif text-sm sm:text-base font-bold tracking-wider text-amber-300 uppercase">
-                Christian Culture
+              <span className="text-sm sm:text-base font-extrabold tracking-tight text-stone-100 uppercase">
+                CC Studio
               </span>
               <span className="text-stone-500 hidden sm:inline">•</span>
               <span className="text-xs sm:text-sm font-semibold tracking-wide text-stone-200">
-                BIBLIA AUDIO STUDIO
+                BIBLIA AUDIO / VIDEO ENGINE
               </span>
               <a
                 href="https://www.polskieradio.cc"
@@ -132,8 +132,8 @@ export const Header: React.FC<HeaderProps> = ({
                 polskieradio.cc
               </a>
             </div>
-            <p className="text-[11px] text-stone-400 font-sans italic">
-              „Słowo, które możesz usłyszeć”
+            <p className="text-[10px] text-cyan-400 font-mono tracking-[0.16em] uppercase">
+              Professional Scripture Production
             </p>
           </div>
         </div>
