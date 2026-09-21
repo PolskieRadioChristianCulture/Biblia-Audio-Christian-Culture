@@ -8,7 +8,7 @@ export function createDefaultVideoSettings(
   return {
     mode: 'radio',
     resolution: '1080p',
-    visualizer: 'pulsing_glow',
+    visualizer: 'segmented_led',
     artStyle: 'painterly_illustration',
     motionEffect: 'slow_zoom_in',
     fps: 25,

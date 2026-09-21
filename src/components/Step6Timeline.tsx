@@ -211,6 +211,7 @@ export const Step6Timeline: React.FC<Step6TimelineProps> = ({
             )}
 
             <button
+              id="action-synthesize-all"
               type="button"
               disabled={isSynthesizing || isRenderingMaster}
               onClick={() => onSynthesizeAllVoices(allClipsGenerated)}
@@ -234,6 +235,7 @@ export const Step6Timeline: React.FC<Step6TimelineProps> = ({
             </button>
 
             <button
+              id="action-render-master"
               type="button"
               disabled={isRenderingMaster || isSynthesizing || lines.length === 0}
               onClick={onRenderMasterAudio}

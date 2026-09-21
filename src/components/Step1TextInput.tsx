@@ -173,6 +173,7 @@ export const Step1TextInput: React.FC<Step1TextInputProps> = ({
 
           <div className="flex flex-wrap items-center gap-2">
             <button
+              id="action-load-ubg"
               onClick={() => setIsUbgModalOpen(true)}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-stone-950 text-xs font-bold shadow-md transition-all hover:scale-102 shrink-0 cursor-pointer"
             >
@@ -464,6 +465,7 @@ export const Step1TextInput: React.FC<Step1TextInputProps> = ({
         {/* Action Button */}
         <div className="pt-2 flex justify-end">
           <button
+            id="action-proceed-step2"
             type="button"
             disabled={!canProceed}
             onClick={onProceedToAnalyze}

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { CustomAudioTrack } from '../types';
 import { formatDuration } from '../lib/customAudioUtils';
+import { processMicrophoneAudioWithRadioDsp, RadioProcessingResult } from '../lib/radioVoiceProcessor';
 
 interface VoiceRecorderModalProps {
   isOpen: boolean;
@@ -38,6 +39,9 @@ export const VoiceRecorderModal: React.FC<VoiceRecorderModalProps> = ({
   const [isPlayingPreview, setIsPlayingPreview] = useState<boolean>(false);
   const [micError, setMicError] = useState<string | null>(null);
   const [audioLevel, setAudioLevel] = useState<number>(0);
+  const [radioResult, setRadioResult] = useState<RadioProcessingResult | null>(null);
+  const [isProcessingRadio, setIsProcessingRadio] = useState<boolean>(false);
+  const [useRadioVersion, setUseRadioVersion] = useState<boolean>(true);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -149,6 +153,20 @@ export const VoiceRecorderModal: React.FC<VoiceRecorderModalProps> = ({
         setRecordedBlob(blob);
         setRecordedAudioUrl(url);
         stopRecordingCleanup();
+
+        // Run Christian Culture Radio Voice Processing DSP chain
+        setIsProcessingRadio(true);
+        processMicrophoneAudioWithRadioDsp(blob)
+          .then((res) => {
+            setRadioResult(res);
+            setUseRadioVersion(true);
+          })
+          .catch((err) => {
+            console.warn('Radio DSP pipeline error, falling back to raw:', err);
+          })
+          .finally(() => {
+            setIsProcessingRadio(false);
+          });
       };
 
       recorder.start(100);
@@ -175,8 +193,10 @@ export const VoiceRecorderModal: React.FC<VoiceRecorderModalProps> = ({
     }
   };
 
+  const activeAudioUrl = (useRadioVersion && radioResult ? radioResult.processedUrl : recordedAudioUrl);
+
   const togglePlayPreview = () => {
-    if (!recordedAudioUrl) return;
+    if (!activeAudioUrl) return;
 
     if (isPlayingPreview) {
       if (previewAudioRef.current) {
@@ -185,11 +205,11 @@ export const VoiceRecorderModal: React.FC<VoiceRecorderModalProps> = ({
       setIsPlayingPreview(false);
     } else {
       if (!previewAudioRef.current) {
-        const a = new Audio(recordedAudioUrl);
+        const a = new Audio(activeAudioUrl);
         a.onended = () => setIsPlayingPreview(false);
         previewAudioRef.current = a;
       } else {
-        previewAudioRef.current.src = recordedAudioUrl;
+        previewAudioRef.current.src = activeAudioUrl;
       }
       previewAudioRef.current.play().catch((e) => console.error(e));
       setIsPlayingPreview(true);
@@ -197,28 +217,33 @@ export const VoiceRecorderModal: React.FC<VoiceRecorderModalProps> = ({
   };
 
   const handleAcceptRecording = async () => {
-    if (!recordedBlob || !recordedAudioUrl) return;
+    const finalBlob = (useRadioVersion && radioResult ? radioResult.processedBlob : recordedBlob);
+    const finalUrl = (useRadioVersion && radioResult ? radioResult.processedUrl : recordedAudioUrl);
+    const finalDuration = (useRadioVersion && radioResult ? radioResult.durationSec : recordingDurationSec);
+
+    if (!finalBlob || !finalUrl) return;
 
     // Convert Blob to Base64
     const reader = new FileReader();
     reader.onloadend = () => {
       const result = (reader.result as string) || '';
       const base64 = result.includes('base64,') ? result.split('base64,')[1] : result;
+      const isWav = useRadioVersion && !!radioResult;
 
       const track: CustomAudioTrack = {
-        fileName: `recytacja_${characterName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now()}.webm`,
-        fileSizeBytes: recordedBlob.size,
-        audioUrl: recordedAudioUrl,
+        fileName: `recytacja_${characterName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now()}.${isWav ? 'wav' : 'webm'}`,
+        fileSizeBytes: finalBlob.size,
+        audioUrl: finalUrl,
         base64,
-        durationSec: recordingDurationSec || 1,
+        durationSec: finalDuration || 1,
         uploadedAt: Date.now(),
-        mimeType: recordedBlob.type || 'audio/webm',
+        mimeType: isWav ? 'audio/wav' : (recordedBlob?.type || 'audio/webm'),
       };
 
       onRecordingComplete(track);
       onClose();
     };
-    reader.readAsDataURL(recordedBlob);
+    reader.readAsDataURL(finalBlob);
   };
 
   return (
@@ -312,6 +337,78 @@ export const VoiceRecorderModal: React.FC<VoiceRecorderModalProps> = ({
             <div className="p-3 bg-red-950/60 border border-red-800/80 rounded-xl text-xs text-red-300 flex items-center gap-2">
               <AlertCircle size={16} className="shrink-0" />
               <span>{micError}</span>
+            </div>
+          )}
+
+          {/* Radio DSP Mastering Processing Panel */}
+          {recordedAudioUrl && !isRecording && (
+            <div className="rounded-xl bg-[#0c1017] border border-amber-500/30 p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <span className="text-xs font-bold text-white uppercase tracking-wider">
+                    Radiowy Tor Mikrofonowy CC (DSP)
+                  </span>
+                </div>
+                {isProcessingRadio ? (
+                  <span className="text-[11px] text-amber-400 font-bold animate-pulse">
+                    Przetwarzanie DSP...
+                  </span>
+                ) : (
+                  <div className="flex items-center gap-1.5 bg-[#141b25] p-1 rounded-lg border border-[#253245]">
+                    <button
+                      type="button"
+                      onClick={() => setUseRadioVersion(true)}
+                      className={`px-2.5 py-1 rounded text-[11px] font-bold transition-colors ${
+                        useRadioVersion
+                          ? 'bg-amber-500 text-stone-950 shadow-sm'
+                          : 'text-stone-400 hover:text-white'
+                      }`}
+                    >
+                      Radiowe CC
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUseRadioVersion(false)}
+                      className={`px-2.5 py-1 rounded text-[11px] font-bold transition-colors ${
+                        !useRadioVersion
+                          ? 'bg-stone-700 text-white shadow-sm'
+                          : 'text-stone-400 hover:text-white'
+                      }`}
+                    >
+                      Surowe
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* 6 Broadcast DSP Chain Status Badges */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 text-[10px]">
+                <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-[#141b25] border border-emerald-500/30 text-emerald-300">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                  <span className="truncate">Redukcja szumu FFT</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-[#141b25] border border-emerald-500/30 text-emerald-300">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                  <span className="truncate">Filtr 75 Hz (Butterworth)</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-[#141b25] border border-emerald-500/30 text-emerald-300">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                  <span className="truncate">Prezencja 3.5 kHz (+3 dB)</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-[#141b25] border border-emerald-500/30 text-emerald-300">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                  <span className="truncate">Kompresja radiowa 3:1</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-[#141b25] border border-emerald-500/30 text-emerald-300">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                  <span className="truncate">Auto-Level: -16 LUFS</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-[#141b25] border border-emerald-500/30 text-emerald-300">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                  <span className="truncate">Limiter emisyjny: -1 dBTP</span>
+                </div>
+              </div>
             </div>
           )}
 

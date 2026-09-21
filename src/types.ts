@@ -227,6 +227,7 @@ export type VideoResolution =
 export type VideoVisualizerType =
   | 'waveform'         // Fala dźwiękowa (oscyloskop)
   | 'frequency_bars'   // Pasmo częstotliwości
+  | 'segmented_led'    // Korektor segmentowy LED (słupki klockowe LED)
   | 'pulsing_glow'     // Pulsujące światło
   | 'voice_line'       // Linia reagująca na głos
   | 'none';            // Brak wizualizacji

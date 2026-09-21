@@ -240,8 +240,57 @@ export const Step7VideoStudio: React.FC<Step7VideoStudioProps> = ({
         const timeFactor = timestamp * 0.005;
         const isVoiceActive = isPlaying;
 
-        if (settings.visualizer === 'frequency_bars') {
-          // Centered delicate frequency spectrum
+        if (settings.visualizer === 'segmented_led') {
+          // Korektor segmentowy LED (dynamiczne klocki LED w kolorach zielony, bursztynowy, czerwony)
+          const colCount = isShorts ? 24 : 36;
+          const colWidth = isShorts ? 14 : 18;
+          const colGap = 4;
+          const totalW = colCount * (colWidth + colGap);
+          const startX = (width - totalW) / 2;
+          const baseY = isShorts ? height * 0.74 : height * 0.78;
+          const segmentCount = 14;
+          const segHeight = 4;
+          const segGap = 2;
+
+          for (let c = 0; c < colCount; c++) {
+            // Amplitude for this column (0 when paused/stopped)
+            const amp = isVoiceActive
+              ? Math.max(0, Math.sin(timeFactor * 1.8 + c * 0.4) * Math.cos(timeFactor * 0.9 + c * 0.25))
+              : 0;
+            const litSegments = Math.round(amp * segmentCount);
+            const colX = startX + c * (colWidth + colGap);
+
+            for (let s = 0; s < segmentCount; s++) {
+              const segY = baseY - (s + 1) * (segHeight + segGap);
+              const isLit = s < litSegments;
+
+              // Color gradient: bottom (green) -> mid (amber/gold) -> top (peak red)
+              let litColor = '#10b981'; // Green
+              let unlitColor = 'rgba(16, 185, 129, 0.12)';
+              if (s >= 11) {
+                litColor = '#ef4444'; // Red peak
+                unlitColor = 'rgba(239, 68, 68, 0.12)';
+              } else if (s >= 8) {
+                litColor = '#f59e0b'; // Amber warning
+                unlitColor = 'rgba(245, 158, 11, 0.12)';
+              }
+
+              ctx.fillStyle = isLit ? litColor : unlitColor;
+              if (isLit) {
+                ctx.shadowColor = litColor;
+                ctx.shadowBlur = 4;
+              } else {
+                ctx.shadowBlur = 0;
+              }
+
+              ctx.beginPath();
+              ctx.roundRect(colX, segY, colWidth, segHeight, 1.5);
+              ctx.fill();
+            }
+            ctx.shadowBlur = 0;
+          }
+        } else if (settings.visualizer === 'frequency_bars') {
+          // Wskaźnik aktywności głosu (ciągłe słupki widma)
           const barCount = isShorts ? 32 : 48;
           const barWidth = isShorts ? 12 : 14;
           const gap = 4;
@@ -251,38 +300,41 @@ export const Step7VideoStudio: React.FC<Step7VideoStudioProps> = ({
 
           for (let i = 0; i < barCount; i++) {
             const h = isVoiceActive
-              ? Math.abs(Math.sin(timeFactor + i * 0.3) * Math.cos(timeFactor * 0.5 + i * 0.2)) * 60 + 8
-              : 6 + Math.sin(timeFactor + i * 0.5) * 3;
+              ? Math.abs(Math.sin(timeFactor + i * 0.3) * Math.cos(timeFactor * 0.5 + i * 0.2)) * 64 + 4
+              : 0; // Completely flat/stopped when audio is not playing
 
-            const x = startX + i * (barWidth + gap);
-            const barGrad = ctx.createLinearGradient(0, baseY - h, 0, baseY);
-            barGrad.addColorStop(0, '#fbbf24');
-            barGrad.addColorStop(1, 'rgba(217, 119, 6, 0.3)');
-            ctx.fillStyle = barGrad;
-            ctx.beginPath();
-            ctx.roundRect(x, baseY - h, barWidth, h, 3);
-            ctx.fill();
+            if (h > 0) {
+              const x = startX + i * (barWidth + gap);
+              const barGrad = ctx.createLinearGradient(0, baseY - h, 0, baseY);
+              barGrad.addColorStop(0, '#fbbf24');
+              barGrad.addColorStop(1, 'rgba(217, 119, 6, 0.3)');
+              ctx.fillStyle = barGrad;
+              ctx.beginPath();
+              ctx.roundRect(x, baseY - h, barWidth, h, 3);
+              ctx.fill();
+            }
           }
         } else if (settings.visualizer === 'waveform') {
-          // Smooth sine oscilloscope
+          // Oscyloskop / Prawdziwa fala dźwiękowa
           ctx.beginPath();
-          ctx.lineWidth = 3;
+          ctx.lineWidth = 3.5;
           ctx.strokeStyle = '#f59e0b';
           const centerY = isShorts ? height * 0.72 : height * 0.76;
 
           for (let x = 0; x < width; x += 4) {
-            const amp = isVoiceActive ? 28 * Math.sin(timeFactor * 2) : 4;
-            const y = centerY + Math.sin(x * 0.02 + timeFactor) * amp;
+            // When voice is active: dynamic oscillating wave. When paused: flat center line
+            const amp = isVoiceActive ? 32 * Math.sin(timeFactor * 2.2) * Math.cos(x * 0.01 + timeFactor) : 0;
+            const y = centerY + amp;
             if (x === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
           }
           ctx.stroke();
         } else if (settings.visualizer === 'pulsing_glow') {
-          // Pulsing Sacred Aureole
+          // Pulsujące święte światło
           const glowY = isShorts ? height * 0.45 : height * 0.4;
-          const radius = 90 + (isVoiceActive ? Math.sin(timeFactor * 3) * 20 : 5);
+          const radius = 90 + (isVoiceActive ? Math.sin(timeFactor * 3) * 25 : 0);
           const glowGrad = ctx.createRadialGradient(width / 2, glowY, 10, width / 2, glowY, radius);
-          glowGrad.addColorStop(0, 'rgba(245, 158, 11, 0.35)');
+          glowGrad.addColorStop(0, isVoiceActive ? 'rgba(245, 158, 11, 0.4)' : 'rgba(245, 158, 11, 0.15)');
           glowGrad.addColorStop(1, 'rgba(245, 158, 11, 0)');
           ctx.fillStyle = glowGrad;
           ctx.beginPath();
@@ -474,6 +526,7 @@ export const Step7VideoStudio: React.FC<Step7VideoStudioProps> = ({
           </button>
 
           <button
+            id="action-render-video"
             type="button"
             onClick={() => onRenderVideo(settings)}
             disabled={isRenderingVideo}
@@ -629,12 +682,13 @@ export const Step7VideoStudio: React.FC<Step7VideoStudioProps> = ({
                 <select
                   value={settings.visualizer}
                   onChange={(e) => handleVisualizerChange(e.target.value as VideoVisualizerType)}
-                  className="bg-stone-950 border border-stone-700 rounded-xl px-2.5 py-1.5 text-xs text-stone-200 focus:border-amber-500"
+                  className="bg-stone-950 border border-stone-700 rounded-xl px-2.5 py-1.5 text-xs text-stone-200 focus:border-amber-500 font-medium"
                 >
+                  <option value="segmented_led">Korektor segmentowy LED (klocki emisyjne)</option>
+                  <option value="waveform">Oscyloskop (Fala dźwiękowa dynamiczna)</option>
+                  <option value="frequency_bars">Wskaźnik aktywności głosu (słupki)</option>
+                  <option value="pulsing_glow">Pulsujące światło (złota aureola)</option>
                   <option value="none">Brak wizualizacji (Czysty kadr)</option>
-                  <option value="pulsing_glow">Pulsujące światło</option>
-                  <option value="frequency_bars">Wskaźnik aktywności głosu</option>
-                  <option value="waveform" disabled>Oscyloskop (Fala dźwiękowa — w przygotowaniu)</option>
                 </select>
               </div>
             </div>

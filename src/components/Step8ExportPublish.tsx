@@ -164,6 +164,7 @@ export const Step8ExportPublish: React.FC<Step8ExportPublishProps> = ({
 
         {/* Big ZIP Download Button */}
         <button
+          id="action-download-all"
           type="button"
           onClick={handleDownloadZip}
           disabled={isZipping}

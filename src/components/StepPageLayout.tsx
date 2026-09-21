@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { PRODUCTION_STEPS, StepDefinition } from '../data/stepsData';
 import { ProductionProject } from '../types';
+import { ProductionGuide } from './ProductionGuide';
 
 interface StepPageLayoutProps {
   currentStep: number;
@@ -180,6 +181,13 @@ export const StepPageLayout: React.FC<StepPageLayoutProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Production Guide: "Następny ruch" */}
+      <ProductionGuide
+        currentStep={currentStep}
+        project={project}
+        onSelectStep={onSelectStep}
+      />
 
       {/* Main Page Workspace Content */}
       <div className="min-h-[500px]">{children}</div>

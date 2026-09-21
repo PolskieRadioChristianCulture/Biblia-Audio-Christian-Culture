@@ -396,9 +396,9 @@ export const Step3ScriptEditor: React.FC<Step3ScriptEditorProps> = ({
         })}
       </div>
 
-      {/* Bottom Action */}
       <div className="pt-4 flex justify-end">
         <button
+          id="action-proceed-step4"
           type="button"
           onClick={onProceedToCasting}
           className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 text-sm font-bold shadow-lg transition-all hover:scale-102"
