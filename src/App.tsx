@@ -17,6 +17,7 @@ import { DEFAULT_CHARACTER_PROFILES } from './data/videoPresets';
 import { createDefaultVideoSettings, calculateSubtitleCues } from './lib/videoUtils';
 import { DramaCharacter, DramaLine, GeneratedAudioClip, ProductionProject, VideoSettings } from './types';
 import { pcm16Base64ToWavUrl } from './lib/audioUtils';
+import { studioFetch } from './lib/apiClient';
 
 const STORAGE_KEY = 'biblia_audio_studio_projects';
 
@@ -280,7 +281,7 @@ export default function App() {
     });
 
     try {
-      const res = await fetch('/api/tts/synthesize', {
+      const res = await studioFetch('/api/tts/synthesize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -328,7 +329,7 @@ export default function App() {
     });
 
     try {
-      const res = await fetch('/api/tts/synthesize', {
+      const res = await studioFetch('/api/tts/synthesize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -364,7 +365,7 @@ export default function App() {
     const voiceName = char?.geminiVoice || 'Kore';
 
     try {
-      const res = await fetch('/api/tts/synthesize', {
+      const res = await studioFetch('/api/tts/synthesize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -403,7 +404,7 @@ export default function App() {
       return;
     }
     try {
-      await fetch('/api/tts/clear-cache', { method: 'POST' });
+      await studioFetch('/api/tts/clear-cache', { method: 'POST' });
       updateCurrentProject({
         generatedClips: [],
         masterAudioWavUrl: undefined,
@@ -449,7 +450,7 @@ export default function App() {
       const existing = !forceAll && updatedClips.find((c) => c.lineId === line.id && c.audioBase64);
       if (!existing) {
         try {
-          const res = await fetch('/api/tts/synthesize', {
+          const res = await studioFetch('/api/tts/synthesize', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -495,7 +496,7 @@ export default function App() {
       });
       if (!forceAll && updatedClips.some((clip) => clip.lineId === segment.id && clip.audioBase64)) continue;
       try {
-        const res = await fetch('/api/tts/synthesize', {
+        const res = await studioFetch('/api/tts/synthesize', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -568,7 +569,7 @@ export default function App() {
         if (outroBase64) orderedClips.push({ base64: outroBase64, pauseAfterMs: 0 });
       }
 
-      const res = await fetch('/api/audio/render-master', {
+      const res = await studioFetch('/api/audio/render-master', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -625,7 +626,7 @@ export default function App() {
         percent: 70,
       });
 
-      const res = await fetch('/api/video/render-mp4', {
+      const res = await studioFetch('/api/video/render-mp4', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

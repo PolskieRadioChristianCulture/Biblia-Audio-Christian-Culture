@@ -631,10 +631,10 @@ export const Step7VideoStudio: React.FC<Step7VideoStudioProps> = ({
                   onChange={(e) => handleVisualizerChange(e.target.value as VideoVisualizerType)}
                   className="bg-stone-950 border border-stone-700 rounded-xl px-2.5 py-1.5 text-xs text-stone-200 focus:border-amber-500"
                 >
-                  <option value="frequency_bars">Pasmo częstotliwości (Spektrogram)</option>
-                  <option value="waveform">Oscyloskop (Fala)</option>
+                  <option value="none">Brak wizualizacji (Czysty kadr)</option>
                   <option value="pulsing_glow">Pulsujące światło</option>
-                  <option value="none">Brak wizualizacji</option>
+                  <option value="frequency_bars">Wskaźnik aktywności głosu</option>
+                  <option value="waveform" disabled>Oscyloskop (Fala dźwiękowa — w przygotowaniu)</option>
                 </select>
               </div>
             </div>

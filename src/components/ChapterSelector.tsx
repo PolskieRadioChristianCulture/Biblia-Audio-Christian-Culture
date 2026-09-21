@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { BookOpen, Sparkles, Wand2, FileText, CheckCircle2, AlertCircle, Radio } from 'lucide-react';
 import { BIBLE_BOOKS, PRESET_SCRIPTS } from '../data/presets';
 import { RadioDramaScript } from '../types';
+import { studioFetch } from '../lib/apiClient';
 
 interface ChapterSelectorProps {
   currentScript: RadioDramaScript;
@@ -48,7 +49,7 @@ export const ChapterSelector: React.FC<ChapterSelectorProps> = ({
     const passage = `${selectedBook} ${chapterNumber}${versesRange ? `, ${versesRange}` : ''}`;
 
     try {
-      const response = await fetch('/api/drama/generate-script', {
+      const response = await studioFetch('/api/drama/generate-script', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -84,7 +85,7 @@ export const ChapterSelector: React.FC<ChapterSelectorProps> = ({
     setIsLoadingUbg(true);
     setErrorMessage(null);
     try {
-      const res = await fetch('/api/bible/ubg/chapter', {
+      const res = await studioFetch('/api/bible/ubg/chapter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -27,15 +27,22 @@ export const DonationSupportModal: React.FC<DonationSupportModalProps> = ({
   const [selectedAmount, setSelectedAmount] = useState<number | 'custom'>(50);
   const [customAmount, setCustomAmount] = useState<string>('');
   const [copiedBank, setCopiedBank] = useState<boolean>(false);
+  const [copiedBlik, setCopiedBlik] = useState<boolean>(false);
 
   if (!isOpen) return null;
 
   const amounts = [20, 50, 100, 200];
 
   const handleCopyAccount = () => {
-    navigator.clipboard.writeText('51 1020 4900 0000 8902 3456 7890');
+    navigator.clipboard.writeText('48291000060000000005272629');
     setCopiedBank(true);
     setTimeout(() => setCopiedBank(false), 2500);
+  };
+
+  const handleCopyBlik = () => {
+    navigator.clipboard.writeText('537137043');
+    setCopiedBlik(true);
+    setTimeout(() => setCopiedBlik(false), 2500);
   };
 
   return (
@@ -133,25 +140,58 @@ export const DonationSupportModal: React.FC<DonationSupportModalProps> = ({
           )}
         </div>
 
-        {/* Action Donation Buttons */}
-        <div className="space-y-2.5 pt-1">
-          <a
-            href="https://zrzutka.pl/christianculture"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-rose-500 via-amber-500 to-amber-600 hover:from-rose-400 hover:to-amber-500 text-stone-950 font-black text-xs shadow-lg shadow-rose-950/30 transition-all hover:scale-[1.01]"
-          >
-            <CreditCard size={16} />
-            <span>PRZEKAŻ DAR PRZEZ ZRZUTKA.PL / BLIK / KARTA</span>
-            <ExternalLink size={13} className="ml-1" />
-          </a>
+        {/* Action Donation Channels */}
+        <div className="space-y-2 pt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <a
+              href="https://patronite.pl/osobowoscplus"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-[#c2410c] hover:bg-[#ea580c] text-white font-bold text-xs shadow-md transition-all hover:scale-[1.01]"
+            >
+              <span>PATRONITE</span>
+              <ExternalLink size={13} />
+            </a>
+
+            <a
+              href="https://revolut.me/christianculture"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-[#0075eb] hover:bg-[#1a88ff] text-white font-bold text-xs shadow-md transition-all hover:scale-[1.01]"
+            >
+              <span>REVOLUT PAY</span>
+              <ExternalLink size={13} />
+            </a>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <a
+              href="https://zrzutka.pl/rs4g4v"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-bold text-xs shadow-md transition-all hover:scale-[1.01]"
+            >
+              <span>ZRZUTKA 1 (rs4g4v)</span>
+              <ExternalLink size={13} />
+            </a>
+
+            <a
+              href="https://zrzutka.pl/3bbxzn"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-bold text-xs shadow-md transition-all hover:scale-[1.01]"
+            >
+              <span>ZRZUTKA 2 (3bbxzn)</span>
+              <ExternalLink size={13} />
+            </a>
+          </div>
 
           {/* Bank Transfer Info Box */}
-          <div className="bg-[#0b0e15] border border-[#1e2738] rounded-xl p-3 flex items-center justify-between gap-2 text-xs">
+          <div className="bg-[#0b0e15] border border-[#1e2738] rounded-xl p-2.5 flex items-center justify-between gap-2 text-xs">
             <div className="min-w-0">
-              <span className="text-[10px] text-stone-400 uppercase block">Konto Misyjne Christian Culture:</span>
+              <span className="text-[10px] text-stone-400 uppercase block">Oficjalne Konto Bankowe CC:</span>
               <span className="text-amber-300 font-mono text-[11px] truncate block">
-                51 1020 4900 0000 8902 3456 7890
+                48 2910 0006 0000 0000 0527 2629
               </span>
             </div>
             <button
@@ -161,6 +201,24 @@ export const DonationSupportModal: React.FC<DonationSupportModalProps> = ({
             >
               {copiedBank ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
               <span>{copiedBank ? 'Skopiowano' : 'Kopiuj'}</span>
+            </button>
+          </div>
+
+          {/* BLIK Info Box */}
+          <div className="bg-[#0b0e15] border border-[#1e2738] rounded-xl p-2.5 flex items-center justify-between gap-2 text-xs">
+            <div className="min-w-0">
+              <span className="text-[10px] text-stone-400 uppercase block">Przelew na Telefon / BLIK:</span>
+              <span className="text-amber-300 font-mono text-[11px] truncate block">
+                537 137 043
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleCopyBlik}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#1a2331] hover:bg-[#253245] text-stone-300 hover:text-white border border-[#2b394e] text-[11px] shrink-0 transition-colors"
+            >
+              {copiedBlik ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+              <span>{copiedBlik ? 'Skopiowano' : 'Kopiuj'}</span>
             </button>
           </div>
         </div>

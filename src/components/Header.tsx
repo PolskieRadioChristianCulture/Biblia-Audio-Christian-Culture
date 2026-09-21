@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   FolderOpen,
   PlusCircle,
@@ -12,9 +12,17 @@ import {
   Cpu,
   ZoomIn,
   ZoomOut,
+  KeyRound,
+  LogOut,
+  LogIn,
+  ShieldCheck,
+  Sparkles,
+  User as UserIcon,
 } from 'lucide-react';
 import { PRODUCTION_STEPS } from '../data/stepsData';
 import { ProjectProductionStatus } from '../types';
+import { auth, loginWithGoogle, logoutUser, onAuthStateChanged, User } from '../lib/firebaseClient';
+import { ApiKeysModal } from './ApiKeysModal';
 
 interface HeaderProps {
   currentStep: number;
@@ -45,6 +53,37 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [transportMode, setTransportMode] = useState<'PAT' | 'SONG'>('SONG');
   const [isLooping, setIsLooping] = useState(true);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isApiKeysOpen, setIsApiKeysOpen] = useState(false);
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+    });
+    return () => unsub();
+  }, []);
+
+  const isAdmin = currentUser?.email === 'nazirczarkes@gmail.com';
+
+  const handleGoogleLogin = async () => {
+    setIsAuthLoading(true);
+    try {
+      await loginWithGoogle();
+    } catch (err) {
+      console.error('Błąd logowania Google:', err);
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logoutUser();
+    } catch (err) {
+      console.error('Błąd wylogowania:', err);
+    }
+  };
 
   const getStatusBadge = (status: ProjectProductionStatus) => {
     switch (status) {
@@ -261,6 +300,61 @@ export const Header: React.FC<HeaderProps> = ({
             <span>{statusInfo.label}</span>
           </div>
 
+          {/* BYOK / API Keys Button */}
+          <button
+            id="btn-open-apikeys"
+            onClick={() => setIsApiKeysOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#1b202a] hover:bg-[#252c3a] text-amber-300 hover:text-amber-200 text-xs font-medium border border-amber-600/40 hover:border-amber-500 transition-colors"
+            title="Zarządzaj silnikami mowy i kluczami API (Gemini / ElevenLabs)"
+          >
+            <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden lg:inline">Klucze API</span>
+          </button>
+
+          {/* User Profile / Google Login Status */}
+          {currentUser ? (
+            <div className="flex items-center gap-1.5 bg-[#141923] border border-[#263143] rounded-lg px-2 py-0.5">
+              {currentUser.photoURL ? (
+                <img
+                  src={currentUser.photoURL}
+                  alt={currentUser.displayName || 'Użytkownik'}
+                  className="w-5 h-5 rounded-full border border-amber-500/50"
+                />
+              ) : (
+                <div className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-[10px] font-bold">
+                  {currentUser.displayName ? currentUser.displayName[0].toUpperCase() : 'U'}
+                </div>
+              )}
+              <div className="hidden xl:flex flex-col text-left">
+                <span className="text-[11px] font-bold text-stone-200 truncate max-w-[110px]">
+                  {currentUser.displayName || currentUser.email?.split('@')[0]}
+                </span>
+                <span className={`text-[9px] font-mono font-bold ${isAdmin ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {isAdmin ? 'ADMIN (Misyjny Gemini)' : 'BYOK / Wolny'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="p-1 hover:bg-[#212937] text-stone-400 hover:text-rose-400 rounded transition-colors"
+                title="Wyloguj ze studia"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleGoogleLogin}
+              disabled={isAuthLoading}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-white hover:bg-stone-100 text-stone-900 text-xs font-bold shadow-sm transition-all disabled:opacity-50"
+              title="Zaloguj się przez Google (LUMINA)"
+            >
+              <LogIn className="w-3.5 h-3.5 text-stone-900" />
+              <span className="hidden sm:inline">Zaloguj Google</span>
+            </button>
+          )}
+
           <button
             id="btn-open-projects"
             onClick={onOpenProjects}
@@ -346,6 +440,13 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
       </div>
+
+      {/* BYOK / ElevenLabs / Gemini API Keys Modal */}
+      <ApiKeysModal
+        isOpen={isApiKeysOpen}
+        onClose={() => setIsApiKeysOpen(false)}
+        isAdmin={isAdmin}
+      />
     </header>
   );
 };

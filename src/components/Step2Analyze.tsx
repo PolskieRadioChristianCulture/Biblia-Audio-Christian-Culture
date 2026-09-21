@@ -12,6 +12,7 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { ProductionProject } from '../types';
+import { studioFetch } from '../lib/apiClient';
 
 interface Step2AnalyzeProps {
   project: ProductionProject;
@@ -35,7 +36,7 @@ export const Step2Analyze: React.FC<Step2AnalyzeProps> = ({
     setAnalysisError(null);
 
     try {
-      const response = await fetch('/api/drama/generate-script', {
+      const response = await studioFetch('/api/drama/generate-script', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -7,6 +7,8 @@ import crypto from 'crypto';
 import { execFileSync } from 'child_process';
 import dotenv from 'dotenv';
 import { GoogleGenAI, Type } from '@google/genai';
+import { initializeApp as initAdminApp, cert as adminCert } from 'firebase-admin/app';
+import { getAuth as getAdminAuth } from 'firebase-admin/auth';
 import { createServer as createViteServer } from 'vite';
 import { extractUbgChapter, getUbgPdfPath } from './src/lib/ubgService';
 import { UBG_BOOKS, UBG_BIBLE_INFO } from './src/data/ubgBooks';
@@ -14,9 +16,122 @@ import { UBG_BOOKS, UBG_BIBLE_INFO } from './src/data/ubgBooks';
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3005;
+
+// Persistent storage setup
+const STORAGE_DIR = process.env.STORAGE_DIR || path.resolve(process.cwd(), 'storage');
+const TTS_CACHE_DIR = path.join(STORAGE_DIR, 'tts_cache');
+const PRODUCTIONS_DIR = path.join(STORAGE_DIR, 'productions');
+const VIDEOS_DIR = path.join(STORAGE_DIR, 'videos');
+
+[STORAGE_DIR, TTS_CACHE_DIR, PRODUCTIONS_DIR, VIDEOS_DIR].forEach((dir) => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
+
+// Firebase Admin Initialization for LUMINA authentication
+const serviceAccountPath =
+  process.env.FIREBASE_SERVICE_ACCOUNT_PATH ||
+  path.resolve(process.cwd(), 'lumina-cc-service-account.json');
+
+let firebaseAdminReady = false;
+if (fs.existsSync(serviceAccountPath)) {
+  try {
+    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+    initAdminApp({
+      credential: adminCert(serviceAccount),
+      projectId: 'lumina-cc',
+    });
+    firebaseAdminReady = true;
+    console.log('[Firebase Admin] Zalogowano z kontem usługi lumina-cc.');
+  } catch (err: any) {
+    console.warn('[Firebase Admin] Błąd inicjalizacji z pliku JSON:', err.message);
+  }
+}
+
+interface StudioUser {
+  uid: string;
+  email?: string;
+  name?: string;
+  isAdmin: boolean;
+}
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: StudioUser | null;
+    }
+  }
+}
+
+function verifyTokenViaGoogle(token: string): Promise<any> {
+  return new Promise((resolve) => {
+    https
+      .get(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(token)}`, (res) => {
+        if (res.statusCode !== 200) return resolve(null);
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(data));
+          } catch {
+            resolve(null);
+          }
+        });
+      })
+      .on('error', () => resolve(null));
+  });
+}
+
+async function verifyAuthMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    req.user = null;
+    return next();
+  }
+
+  const token = authHeader.slice(7).trim();
+  if (!token) {
+    req.user = null;
+    return next();
+  }
+
+  const adminEmail = (process.env.STUDIO_ADMIN_EMAIL || 'nazirczarkes@gmail.com').toLowerCase();
+
+  try {
+    if (firebaseAdminReady) {
+      const decoded = await getAdminAuth().verifyIdToken(token);
+      const email = (decoded.email || '').toLowerCase();
+      req.user = {
+        uid: decoded.uid,
+        email,
+        name: decoded.name,
+        isAdmin: email === adminEmail,
+      };
+      return next();
+    }
+
+    const tokenInfo = await verifyTokenViaGoogle(token);
+    if (tokenInfo && tokenInfo.email) {
+      const email = String(tokenInfo.email).toLowerCase();
+      req.user = {
+        uid: tokenInfo.sub || tokenInfo.user_id,
+        email,
+        name: tokenInfo.name,
+        isAdmin: email === adminEmail,
+      };
+      return next();
+    }
+
+    req.user = null;
+    next();
+  } catch (err: any) {
+    req.user = null;
+    next();
+  }
+}
 
 app.use(express.json({ limit: '50mb' }));
+app.use(verifyAuthMiddleware);
 app.use('/bible', express.static(path.resolve('public/bible')));
 
 const apiWindows = new Map<string, { startedAt: number; requests: number }>();
@@ -63,24 +178,51 @@ function assertSafeText(value: unknown, field: string, maxLength = 240): string 
 const SCRIPT_MODEL = process.env.GEMINI_SCRIPT_MODEL || 'gemini-3.8-flash';
 const TTS_MODEL = process.env.GEMINI_TTS_MODEL || 'gemini-3.1-flash-tts-preview';
 
-// Lazy Gemini client helper
-let aiClient: GoogleGenAI | null = null;
-function getAi(): GoogleGenAI {
-  if (!aiClient) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error('GEMINI_API_KEY is not configured');
-    }
-    aiClient = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
+// Helper for AI client with BYOK (Bring Your Own Key) and mission quota protection
+function getAiForRequest(req: express.Request, userApiKey?: string): GoogleGenAI {
+  const headerKey = req.headers['x-user-gemini-key'];
+  const explicitKey =
+    typeof userApiKey === 'string' && userApiKey.trim()
+      ? userApiKey.trim()
+      : typeof headerKey === 'string' && headerKey.trim()
+      ? headerKey.trim()
+      : '';
+
+  if (explicitKey) {
+    return new GoogleGenAI({
+      apiKey: explicitKey,
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
   }
-  return aiClient;
+
+  // Only verified administrator can use the mission server key
+  if (req.user?.isAdmin) {
+    const adminKey = process.env.GEMINI_API_KEY;
+    if (!adminKey) {
+      throw new Error('Brak skonfigurowanego klucza GEMINI_API_KEY na serwerze.');
+    }
+    return new GoogleGenAI({
+      apiKey: adminKey,
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+    });
+  }
+
+  throw new Error('BYOK_KEY_REQUIRED');
+}
+
+function getAi(): GoogleGenAI {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY is not configured');
+  }
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
+    },
+  });
 }
 
 // In-memory cache for audio clips to prevent quota exhaustion
@@ -104,9 +246,122 @@ app.get('/api/health', (req, res) => {
     service: 'Biblia Audio Christian Culture Studio',
     brandUrl: 'https://www.polskieradio.cc',
     hasApiKey: !!process.env.GEMINI_API_KEY,
+    firebaseAdminReady,
+    adminEmail: process.env.STUDIO_ADMIN_EMAIL || 'nazirczarkes@gmail.com',
     scriptModel: SCRIPT_MODEL,
     ttsModel: TTS_MODEL,
   });
+});
+
+// Endpoint: Current user session info
+app.get('/api/auth/me', (req, res) => {
+  res.json({
+    user: req.user || null,
+    isAdmin: !!req.user?.isAdmin,
+    firebaseAdminReady,
+  });
+});
+
+// Endpoint: Validate user Gemini API Key
+app.post('/api/keys/validate-gemini', async (req, res) => {
+  try {
+    const key = (req.headers['x-user-gemini-key'] as string) || req.body.userApiKey;
+    if (!key || typeof key !== 'string' || !key.trim()) {
+      return res.status(400).json({ error: 'Podaj klucz API Gemini.' });
+    }
+
+    const testAi = new GoogleGenAI({ apiKey: key.trim() });
+    const response = await testAi.models.generateContent({
+      model: SCRIPT_MODEL,
+      contents: 'Odpowiedz jednym słowem: "OK"',
+    });
+
+    return res.json({
+      success: true,
+      model: SCRIPT_MODEL,
+      status: 'valid',
+      preview: (response.text || '').trim(),
+    });
+  } catch (err: any) {
+    console.warn('Błąd weryfikacji klucza Gemini:', err.message);
+    return res.status(400).json({
+      error: err.message || 'Nieprawidłowy lub nieaktywny klucz Gemini API.',
+    });
+  }
+});
+
+// Endpoint: Fetch ElevenLabs Voices using user's key
+app.post('/api/elevenlabs/voices', async (req, res) => {
+  try {
+    const key = (req.headers['x-user-elevenlabs-key'] as string) || req.body.userApiKey;
+    if (!key || typeof key !== 'string' || !key.trim()) {
+      return res.status(400).json({ error: 'Podaj klucz API ElevenLabs.' });
+    }
+
+    const response = await fetch('https://api.elevenlabs.io/v1/voices', {
+      headers: {
+        'xi-api-key': key.trim(),
+      },
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({
+        error: `ElevenLabs API zwróciło błąd (${response.status}): ${errText}`,
+      });
+    }
+
+    const data: any = await response.json();
+    return res.json({ success: true, voices: data.voices || [] });
+  } catch (err: any) {
+    console.warn('Błąd połączenia z ElevenLabs:', err.message);
+    return res.status(500).json({ error: err.message || 'Błąd połączenia z API ElevenLabs.' });
+  }
+});
+
+// Endpoint: Synthesize Speech via ElevenLabs using user's key
+app.post('/api/elevenlabs/tts', async (req, res) => {
+  try {
+    const key = (req.headers['x-user-elevenlabs-key'] as string) || req.body.userApiKey;
+    const { voiceId = '21m00Tcm4TlvDq8ikWAM', text } = req.body;
+
+    if (!key || typeof key !== 'string' || !key.trim()) {
+      return res.status(400).json({ error: 'Wymagany klucz ElevenLabs API.' });
+    }
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ error: 'Brak tekstu do syntezy.' });
+    }
+
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'xi-api-key': key.trim(),
+      },
+      body: JSON.stringify({
+        text,
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: {
+          stability: 0.5,
+          similarity_boost: 0.75,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: `ElevenLabs TTS błąd (${response.status}): ${errText}` });
+    }
+
+    const audioArrayBuffer = await response.arrayBuffer();
+    const audioBuffer = Buffer.from(audioArrayBuffer);
+
+    res.setHeader('Content-Type', 'audio/mpeg');
+    return res.send(audioBuffer);
+  } catch (err: any) {
+    console.warn('Błąd syntezy ElevenLabs:', err.message);
+    return res.status(500).json({ error: err.message || 'Błąd syntezy ElevenLabs.' });
+  }
 });
 
 // Endpoint: UBG Bible Metadata and Books list
@@ -169,7 +424,19 @@ app.post('/api/drama/generate-script', async (req, res) => {
       return res.status(400).json({ error: 'Podaj fragment biblijny lub wklej tekst rozdziału.' });
     }
 
-    const ai = getAi();
+    let ai: GoogleGenAI;
+    try {
+      ai = getAiForRequest(req, req.body.userApiKey);
+    } catch (err: any) {
+      if (err.message === 'BYOK_KEY_REQUIRED') {
+        return res.status(403).json({
+          error:
+            'Dostęp do analizy i generowania scenariusza AI wymaga własnego darmowego klucza Gemini API (BYOK). Wprowadź klucz w panelu Klucze API lub skorzystaj z gotowego tekstu i nagrywania mikrofonem.',
+          code: 'BYOK_KEY_REQUIRED',
+        });
+      }
+      return res.status(500).json({ error: err.message || 'Błąd konfiguracji klucza AI.' });
+    }
 
     const systemInstruction = `Jesteś głównym reżyserem radiowym i biblistą w stacji "Christian Culture - Polskie Radio" (www.polskieradio.cc).
 Twoim zadaniem jest przeanalizować podany rozdział Pisma Świętego i przygotować profesjonalny, ustrukturyzowany scenariusz słuchowiska biblijnego dla cyklu "Biblia Audio Christian Culture".
@@ -386,7 +653,7 @@ app.post('/api/direction/ai-direct', async (req, res) => {
     // AI Director logic will be assisted by Gemini if available
     let aiRefinements = null;
     try {
-      const ai = getAi();
+      const ai = getAiForRequest(req, req.body.userApiKey);
       const prompt = `Jesteś Głównym Reżyserem Dźwięku i Biblistą stacji Christian Culture (www.polskieradio.cc).
 Dokonaj reżyserii akustycznej dla poniższego scenariusza w stylu: "${directorStyle}".
 
@@ -438,11 +705,6 @@ ${JSON.stringify(script.lines.map((l: any) => ({ id: l.id, characterName: l.char
     return res.status(500).json({ error: err.message || 'Błąd reżysera dźwięku.' });
   }
 });
-
-const TTS_CACHE_DIR = path.join(os.tmpdir(), 'biblia_tts_cache');
-if (!fs.existsSync(TTS_CACHE_DIR)) {
-  fs.mkdirSync(TTS_CACHE_DIR, { recursive: true });
-}
 
 function fetchTtsChunk(text: string, speed = 1): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -588,7 +850,7 @@ app.post('/api/tts/synthesize', async (req, res) => {
 
     // Attempt Gemini TTS first if in 'auto' or 'gemini' mode
     try {
-      const ai = getAi();
+      const ai = getAiForRequest(req, req.body.userApiKey);
       const response = await ai.models.generateContent({
         model: TTS_MODEL,
         contents: [{ parts: [{ text: cleanText }] }],
@@ -742,8 +1004,8 @@ app.post('/api/audio/render-master', async (req, res) => {
     });
 
     const prodId = `prod_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const outputWavPath = path.join(tempDir, `${prodId}_radio_master.wav`);
-    const outputMp3Path = path.join(tempDir, `${prodId}_podcast.mp3`);
+    const outputWavPath = path.join(PRODUCTIONS_DIR, `${prodId}_radio_master.wav`);
+    const outputMp3Path = path.join(PRODUCTIONS_DIR, `${prodId}_podcast.mp3`);
     const voiceWavPath = path.join(tempDir, `${prodId}_voice.wav`);
 
     const episodeTitle = assertSafeText((script && script.title) || projectTitle, 'Tytuł projektu');
@@ -1028,7 +1290,7 @@ app.post('/api/video/render-mp4', async (req, res) => {
 
     // 4. Output MP4 file path
     const videoId = `vid_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const outputMp4Path = path.join(tempDir, `${videoId}_youtube.mp4`);
+    const outputMp4Path = path.join(VIDEOS_DIR, `${videoId}_youtube.mp4`);
 
     // 5. Construct FFmpeg video filter pipeline
     const safeBook = assertSafeText(bookName || 'Ewangelia', 'Nazwa księgi', 100);
@@ -1112,14 +1374,16 @@ app.get('/api/video/download/:id', (req, res) => {
 });
 
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
+  const distPath = path.join(process.cwd(), 'dist');
+  const hasDist = fs.existsSync(path.join(distPath, 'index.html'));
+
+  if (process.env.NODE_ENV === 'development' || (!hasDist && process.env.NODE_ENV !== 'production')) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));

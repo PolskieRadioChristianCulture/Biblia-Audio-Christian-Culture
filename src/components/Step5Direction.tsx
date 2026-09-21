@@ -30,6 +30,7 @@ import {
   ProductionMode,
   ProductionProject,
 } from '../types';
+import { studioFetch } from '../lib/apiClient';
 import {
   applyIntelligentAudioDirection,
   auditAndGuardFemaleCharacters,
@@ -137,7 +138,7 @@ export const Step5Direction: React.FC<Step5DirectionProps> = ({
       // Try asking server endpoint if available
       let aiRefinements = null;
       try {
-        const res = await fetch('/api/direction/ai-direct', {
+        const res = await studioFetch('/api/direction/ai-direct', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ script, directorStyle: selectedStyle }),

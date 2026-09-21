@@ -6,3 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
+*serviceAccountKey*.json
+*lumina-cc*.json
+service-account*.json
+*.pem
+*.key
+storage/
