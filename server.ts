@@ -8,6 +8,8 @@ import { execFileSync } from 'child_process';
 import dotenv from 'dotenv';
 import { GoogleGenAI, Type } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
+import { extractUbgChapter, getUbgPdfPath } from './src/lib/ubgService';
+import { UBG_BOOKS, UBG_BIBLE_INFO } from './src/data/ubgBooks';
 
 dotenv.config();
 
@@ -15,6 +17,7 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: '50mb' }));
+app.use('/bible', express.static(path.resolve('public/bible')));
 
 const apiWindows = new Map<string, { startedAt: number; requests: number }>();
 app.use('/api', (req, res, next) => {
@@ -104,6 +107,48 @@ app.get('/api/health', (req, res) => {
     scriptModel: SCRIPT_MODEL,
     ttsModel: TTS_MODEL,
   });
+});
+
+// Endpoint: UBG Bible Metadata and Books list
+app.get('/api/bible/ubg/info', (req, res) => {
+  const pdfPath = getUbgPdfPath();
+  const exists = fs.existsSync(pdfPath);
+  const size = exists ? fs.statSync(pdfPath).size : 0;
+
+  res.json({
+    ...UBG_BIBLE_INFO,
+    fileExists: exists,
+    fileSizeBytes: size,
+    books: UBG_BOOKS,
+  });
+});
+
+// Endpoint: Download UBG Bible PDF
+app.get('/api/bible/ubg/download', (req, res) => {
+  const pdfPath = getUbgPdfPath();
+  if (!fs.existsSync(pdfPath)) {
+    return res.status(404).json({ error: 'Plik PDF Pisma Świętego UBG nie został znaleziony.' });
+  }
+
+  res.setHeader('Content-Disposition', 'attachment; filename="Pismo_Swiete_UBG.pdf"');
+  res.setHeader('Content-Type', 'application/pdf');
+  fs.createReadStream(pdfPath).pipe(res);
+});
+
+// Endpoint: Extract Chapter from UBG Bible PDF
+app.post('/api/bible/ubg/chapter', async (req, res) => {
+  try {
+    const { book, chapter = 1 } = req.body;
+    if (!book) {
+      return res.status(400).json({ error: 'Podaj nazwę lub skrót księgi biblijnej.' });
+    }
+
+    const result = await extractUbgChapter(String(book), Number(chapter) || 1);
+    res.json(result);
+  } catch (err: any) {
+    console.error('Błąd ekstrakcji UBG:', err);
+    res.status(500).json({ error: err.message || 'Błąd podczas ekstrakcji tekstu z Pisma Świętego UBG.' });
+  }
 });
 
 // Endpoint: Generate Radio Drama Script from Biblical Chapter/Passage

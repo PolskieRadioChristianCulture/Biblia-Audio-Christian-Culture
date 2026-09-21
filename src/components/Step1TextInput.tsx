@@ -8,8 +8,14 @@ import {
   BookOpen,
   AlertCircle,
   CheckCircle2,
+  Download,
+  ExternalLink,
+  Loader2,
+  BookMarked,
 } from 'lucide-react';
 import { BIBLE_BOOKS, DEMO_SCRIPTS } from '../data/presets';
+import { UBG_BIBLE_INFO, UbgBookMeta } from '../data/ubgBooks';
+import { UbgBibleBrowserModal } from './UbgBibleBrowserModal';
 import { BibleSourceType, ProductionProject } from '../types';
 
 interface Step1TextInputProps {
@@ -24,6 +30,9 @@ export const Step1TextInput: React.FC<Step1TextInputProps> = ({
   onProceedToAnalyze,
 }) => {
   const [fileError, setFileError] = useState<string | null>(null);
+  const [isUbgModalOpen, setIsUbgModalOpen] = useState(false);
+  const [isQuickLoadingUbg, setIsQuickLoadingUbg] = useState(false);
+  const [quickLoadSuccess, setQuickLoadSuccess] = useState<string | null>(null);
 
   const characterCount = project.rawSourceText.length;
   // Professional radio recitation speed: approx. 800-900 characters per minute
@@ -48,20 +57,18 @@ export const Step1TextInput: React.FC<Step1TextInputProps> = ({
       };
       reader.readAsText(file);
     } else {
-      // For simple plain text extraction of small files or prompt to paste
       const reader = new FileReader();
       reader.onload = (event) => {
         try {
           const content = event.target?.result as string;
-          // Clean non-printable characters if text-like
           const cleaned = content.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '');
           if (cleaned.length > 50) {
             onUpdateProject({ rawSourceText: cleaned });
           } else {
-            setFileError('Dla plików DOCX/PDF zalecamy skopiowanie i wklejenie tekstu bezpośrednio w polu poniżej.');
+            setFileError('Dla plików DOCX/PDF zalecamy skorzystanie z wbudowanej bazy Pisma Świętego UBG lub skopiowanie tekstu.');
           }
         } catch {
-          setFileError('Nie udało się odczytać pliku. Skopiuj i wklej tekst ręcznie.');
+          setFileError('Nie udało się odczytać pliku. Skopiuj i wklej tekst ręcznie lub wczytaj z bazy UBG.');
         }
       };
       reader.readAsText(file);
@@ -70,19 +77,74 @@ export const Step1TextInput: React.FC<Step1TextInputProps> = ({
 
   const handleLoadDemo = () => {
     const demo = DEMO_SCRIPTS.prodigal_son;
-    // Combine demo lines to create raw source text
     const fullVerbatimText = demo.lines.map((l) => l.originalVerbatimText || l.text).join('\n\n');
     onUpdateProject({
       title: 'Przypowieść o Synu Marnotrawnym (Łk 15)',
       bookName: 'Ewangelia wg św. Łukasza',
       chapterNumber: '15',
-      translation: 'Przekład z domeny publicznej (Biblia Gdańska / Wujka)',
+      translation: 'Uwspółcześniona Biblia Gdańska (UBG 2024)',
       sourceType: 'public_domain',
       rightsConfirmed: true,
       rawSourceText: fullVerbatimText,
       script: demo,
       status: 'analyzed',
     });
+  };
+
+  const handleUbgChapterSelect = (book: UbgBookMeta, chapter: number, text: string) => {
+    onUpdateProject({
+      title: `${book.name} ${chapter} (UBG)`,
+      bookName: book.name,
+      chapterNumber: String(chapter),
+      translation: 'Uwspółcześniona Biblia Gdańska (UBG 2024)',
+      sourceType: 'public_domain',
+      rightsConfirmed: true,
+      rawSourceText: text,
+    });
+    setQuickLoadSuccess(`Wczytano ${book.name} ${chapter} z Pisma Świętego UBG!`);
+    setTimeout(() => setQuickLoadSuccess(null), 5000);
+  };
+
+  const handleQuickLoadCurrentUbg = async () => {
+    if (!project.bookName.trim()) {
+      setFileError('Najpierw wpisz lub wybierz księgę biblijną.');
+      return;
+    }
+    setIsQuickLoadingUbg(true);
+    setFileError(null);
+
+    try {
+      const res = await fetch('/api/bible/ubg/chapter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          book: project.bookName,
+          chapter: parseInt(String(project.chapterNumber || '1'), 10) || 1,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Nie udało się wczytać rozdziału z UBG');
+      }
+
+      onUpdateProject({
+        title: project.title === 'Nowe Słuchowisko' || !project.title ? `${data.book} ${data.chapter} (UBG)` : project.title,
+        bookName: data.book,
+        chapterNumber: String(data.chapter),
+        translation: 'Uwspółcześniona Biblia Gdańska (UBG 2024)',
+        sourceType: 'public_domain',
+        rightsConfirmed: true,
+        rawSourceText: data.text,
+      });
+
+      setQuickLoadSuccess(`Pomyślnie wczytano ${data.book} ${data.chapter} z pliku Pismo_Swiete_UBG.pdf!`);
+      setTimeout(() => setQuickLoadSuccess(null), 5000);
+    } catch (err: any) {
+      setFileError(err.message || 'Błąd wczytywania rozdziału z UBG');
+    } finally {
+      setIsQuickLoadingUbg(false);
+    }
   };
 
   const canProceed =
@@ -92,8 +154,8 @@ export const Step1TextInput: React.FC<Step1TextInputProps> = ({
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      {/* Top Banner / Mission */}
-      <div className="bg-gradient-to-r from-stone-900 via-stone-900 to-amber-950/30 border border-amber-800/40 rounded-2xl p-5 shadow-lg">
+      {/* Top Banner / Mission with UBG Focus */}
+      <div className="bg-gradient-to-r from-stone-900 via-stone-900 to-amber-950/40 border border-amber-800/50 rounded-2xl p-5 shadow-lg">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
@@ -105,22 +167,71 @@ export const Step1TextInput: React.FC<Step1TextInputProps> = ({
               </h2>
             </div>
             <p className="text-xs text-stone-300">
-              Wklej rozdział Biblii lub wczytaj plik. Tekst biblijny pozostanie ściśle nienaruszony.
+              Podepnij dowolny rozdział ze zintegrowanej pełnej Biblii UBG (1360 stron) lub wklej własny tekst.
             </p>
           </div>
-          <button
-            onClick={handleLoadDemo}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-900/40 hover:bg-amber-800/60 border border-amber-700/60 text-amber-200 text-xs font-semibold transition-all hover:scale-102 shrink-0"
-          >
-            <Sparkles className="w-4 h-4 text-amber-400" />
-            <span>Załaduj fragment demo (Łk 15)</span>
-          </button>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setIsUbgModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-stone-950 text-xs font-bold shadow-md transition-all hover:scale-102 shrink-0 cursor-pointer"
+            >
+              <BookOpen className="w-4 h-4" />
+              <span>Przeglądaj całą Biblię UBG (66 ksiąg)</span>
+            </button>
+
+            <button
+              onClick={handleLoadDemo}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-300 text-xs font-semibold border border-stone-700 transition-colors shrink-0"
+              title="Załaduj przykładowy rozdział: Łk 15 (Syn marnotrawny)"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>Demo (Łk 15)</span>
+            </button>
+          </div>
+        </div>
+
+        {/* UBG Bible Integration Status Badge */}
+        <div className="mt-4 pt-3 border-t border-stone-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2 text-stone-300">
+            <BookMarked className="w-4 h-4 text-amber-400" />
+            <span className="font-semibold text-amber-200">Baza projektu:</span>
+            <span>{UBG_BIBLE_INFO.title} (Olsztyn {UBG_BIBLE_INFO.year})</span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <a
+              href={UBG_BIBLE_INFO.pdfPath}
+              download="Pismo_Swiete_UBG.pdf"
+              className="inline-flex items-center gap-1 text-[11px] text-amber-400 hover:text-amber-300 font-medium hover:underline"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Pobierz PDF (12.9 MB)</span>
+            </a>
+            <span className="text-stone-600">•</span>
+            <a
+              href={UBG_BIBLE_INFO.pdfPath}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-[11px] text-amber-400 hover:text-amber-300 font-medium hover:underline"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Otwórz PDF</span>
+            </a>
+          </div>
         </div>
       </div>
 
+      {quickLoadSuccess && (
+        <div className="p-3.5 rounded-xl bg-emerald-950/60 border border-emerald-700/80 text-emerald-200 text-xs flex items-center gap-2.5 shadow-sm">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{quickLoadSuccess}</span>
+        </div>
+      )}
+
       {/* Main Form Fields Grid */}
       <div className="bg-stone-900/90 border border-stone-800 rounded-2xl p-6 space-y-5 shadow-md">
-        {/* Row 1: Title & Book */}
+        {/* Row 1: Title & Language */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="sm:col-span-2">
             <label className="block text-xs font-semibold text-stone-300 mb-1.5">
@@ -146,14 +257,20 @@ export const Step1TextInput: React.FC<Step1TextInputProps> = ({
           </div>
         </div>
 
-        {/* Row 2: Book Quick Selection & Chapter */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="sm:col-span-2">
+        {/* Row 2: Book Selection, Chapter & Quick Load from PDF */}
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+          <div className="sm:col-span-6">
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-semibold text-stone-300">
                 Księga Pisma Świętego:
               </label>
-              <span className="text-[11px] text-stone-400">lub wybierz z listy poniżej</span>
+              <button
+                type="button"
+                onClick={() => setIsUbgModalOpen(true)}
+                className="text-[11px] text-amber-400 hover:text-amber-300 hover:underline cursor-pointer"
+              >
+                otwórz spis 66 ksiąg
+              </button>
             </div>
             <input
               type="text"
@@ -164,7 +281,7 @@ export const Step1TextInput: React.FC<Step1TextInputProps> = ({
             />
           </div>
 
-          <div>
+          <div className="sm:col-span-2">
             <label className="block text-xs font-semibold text-stone-300 mb-1.5">
               Rozdział:
             </label>
@@ -176,15 +293,37 @@ export const Step1TextInput: React.FC<Step1TextInputProps> = ({
               className="w-full bg-stone-950 border border-stone-700 focus:border-amber-500 rounded-xl px-3.5 py-2 text-stone-100 text-sm focus:outline-none text-center font-bold"
             />
           </div>
+
+          <div className="sm:col-span-4">
+            <button
+              type="button"
+              disabled={isQuickLoadingUbg || !project.bookName.trim()}
+              onClick={handleQuickLoadCurrentUbg}
+              className="w-full py-2.5 px-3 rounded-xl bg-amber-950/60 hover:bg-amber-900/80 border border-amber-600/70 text-amber-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-sm"
+              title="Wczytaj tekst tego rozdziału bezpośrednio z pliku PDF UBG"
+            >
+              {isQuickLoadingUbg ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                  <span>Wczytywanie z UBG...</span>
+                </>
+              ) : (
+                <>
+                  <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Wczytaj treść z UBG PDF</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Quick select chips for popular books */}
         <div>
           <span className="text-[11px] text-stone-400 block mb-2 font-medium">
-            Szybki wybór księgi:
+            Szybki wybór popularnych ksiąg:
           </span>
           <div className="flex flex-wrap gap-1.5">
-            {BIBLE_BOOKS.slice(0, 10).map((b) => (
+            {BIBLE_BOOKS.slice(0, 12).map((b) => (
               <button
                 key={b.abbr}
                 type="button"
@@ -214,7 +353,7 @@ export const Step1TextInput: React.FC<Step1TextInputProps> = ({
                   sourceType: e.target.value as BibleSourceType,
                   translation:
                     e.target.value === 'public_domain'
-                      ? 'Przekład z domeny publicznej (Biblia Gdańska / Wujka)'
+                      ? 'Uwspółcześniona Biblia Gdańska (UBG 2024)'
                       : e.target.value === 'licensed_cc'
                       ? 'Przekład licencjonowany przez Christian Culture'
                       : 'Własny tekst użytkownika',
@@ -223,7 +362,7 @@ export const Step1TextInput: React.FC<Step1TextInputProps> = ({
               className="w-full bg-stone-950 border border-stone-700 focus:border-amber-500 rounded-xl px-3 py-2 text-stone-100 text-xs focus:outline-none"
             >
               <option value="public_domain">
-                Przekład należący do domeny publicznej (np. Biblia Gdańska / Wujka)
+                Pismo Święte UBG 2024 (Zalecane — Fundacja Wrota Nadziei)
               </option>
               <option value="licensed_cc">
                 Przekład licencjonowany przez Christian Culture
@@ -243,7 +382,7 @@ export const Step1TextInput: React.FC<Step1TextInputProps> = ({
               type="text"
               value={project.translation}
               onChange={(e) => onUpdateProject({ translation: e.target.value })}
-              placeholder="np. Biblia Gdańska (Domena Publiczna)"
+              placeholder="np. Uwspółcześniona Biblia Gdańska (UBG 2024)"
               className="w-full bg-stone-950 border border-stone-700 focus:border-amber-500 rounded-xl px-3.5 py-2 text-stone-100 text-xs focus:outline-none"
             />
           </div>
@@ -273,7 +412,7 @@ export const Step1TextInput: React.FC<Step1TextInputProps> = ({
             value={project.rawSourceText}
             onChange={(e) => onUpdateProject({ rawSourceText: e.target.value })}
             rows={10}
-            placeholder="Wklej tutaj pełny, oryginalny tekst rozdziału biblijnego wraz z wersetami... Tekst nie zostanie samowolnie zmieniony przez aplikację."
+            placeholder="Wklej tutaj tekst biblijny lub kliknij 'Przeglądaj całą Biblię UBG' powyżej, aby załadować rozdział z oficjalnego PDF..."
             className="w-full bg-stone-950 border border-stone-700 focus:border-amber-500 rounded-xl p-4 text-stone-200 text-sm font-sans leading-relaxed focus:outline-none resize-y"
           />
 
@@ -281,7 +420,7 @@ export const Step1TextInput: React.FC<Step1TextInputProps> = ({
           <div className="flex items-center justify-between flex-wrap gap-3 pt-1 text-xs">
             <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-stone-100 border border-stone-700 transition-colors">
               <Upload className="w-3.5 h-3.5 text-amber-400" />
-              <span>Wczytaj plik TXT / DOCX / PDF</span>
+              <span>Wczytaj własny plik TXT / DOCX / PDF</span>
               <input
                 type="file"
                 accept=".txt,.docx,.pdf"
@@ -316,7 +455,7 @@ export const Step1TextInput: React.FC<Step1TextInputProps> = ({
                 Oświadczenie o prawach do tekstu (Wymagane):
               </span>
               <span>
-                Potwierdzam, że mam prawo wykorzystać i opublikować podany tekst (przekład należy do domeny publicznej, posiadam licencję Christian Culture lub zgodę właściciela praw autorskich).
+                Potwierdzam wykorzystanie tekstu Pisma Świętego UBG 2024 (wolne rozpowszechnianie bez zmian) lub innego uprawnionego źródła.
               </span>
             </div>
           </label>
@@ -330,7 +469,7 @@ export const Step1TextInput: React.FC<Step1TextInputProps> = ({
             onClick={onProceedToAnalyze}
             className={`flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold shadow-lg transition-all ${
               canProceed
-                ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 hover:scale-102'
+                ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 hover:scale-102 cursor-pointer'
                 : 'bg-stone-800 text-stone-500 cursor-not-allowed border border-stone-700'
             }`}
           >
@@ -339,6 +478,15 @@ export const Step1TextInput: React.FC<Step1TextInputProps> = ({
           </button>
         </div>
       </div>
+
+      {/* UBG Bible Modal Browser */}
+      <UbgBibleBrowserModal
+        isOpen={isUbgModalOpen}
+        onClose={() => setIsUbgModalOpen(false)}
+        onSelectChapter={handleUbgChapterSelect}
+        initialBook={project.bookName}
+        initialChapter={String(project.chapterNumber || '1')}
+      />
     </div>
   );
 };

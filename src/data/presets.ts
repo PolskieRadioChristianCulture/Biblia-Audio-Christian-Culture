@@ -1,25 +1,12 @@
 import { BibleBookQuickRef, RadioDramaScript } from '../types';
+import { UBG_BOOKS } from './ubgBooks';
 
-export const BIBLE_BOOKS: BibleBookQuickRef[] = [
-  // Nowy Testament
-  { name: 'Ewangelia wg św. Mateusza', abbr: 'Mt', testament: 'NT', defaultChapters: 28 },
-  { name: 'Ewangelia wg św. Marka', abbr: 'Mk', testament: 'NT', defaultChapters: 16 },
-  { name: 'Ewangelia wg św. Łukasza', abbr: 'Łk', testament: 'NT', defaultChapters: 24 },
-  { name: 'Ewangelia wg św. Jana', abbr: 'J', testament: 'NT', defaultChapters: 21 },
-  { name: 'Dzieje Apostolskie', abbr: 'Dz', testament: 'NT', defaultChapters: 28 },
-  { name: 'List do Rzymian', abbr: 'Rz', testament: 'NT', defaultChapters: 16 },
-  { name: '1 List do Koryntian', abbr: '1 Kor', testament: 'NT', defaultChapters: 16 },
-  { name: 'Apokalipsa św. Jana', abbr: 'Ap', testament: 'NT', defaultChapters: 22 },
-
-  // Stary Testament
-  { name: 'Księga Rodzaju', abbr: 'Rdz', testament: 'ST', defaultChapters: 50 },
-  { name: 'Księga Wyjścia', abbr: 'Wj', testament: 'ST', defaultChapters: 40 },
-  { name: 'Księga Psalmów', abbr: 'Ps', testament: 'ST', defaultChapters: 150 },
-  { name: 'Księga Izajasza', abbr: 'Iz', testament: 'ST', defaultChapters: 66 },
-  { name: 'Księga Hioba', abbr: 'Hi', testament: 'ST', defaultChapters: 42 },
-  { name: 'Pieśń nad Pieśniami', abbr: 'Pnp', testament: 'ST', defaultChapters: 8 },
-  { name: 'Księga Daniela', abbr: 'Dn', testament: 'ST', defaultChapters: 14 },
-];
+export const BIBLE_BOOKS: BibleBookQuickRef[] = UBG_BOOKS.map((b) => ({
+  name: b.name,
+  abbr: b.abbr,
+  testament: b.testament,
+  defaultChapters: b.chaptersCount,
+}));
 
 export const DEMO_SCRIPTS: Record<string, RadioDramaScript> = {
   prodigal_son: {

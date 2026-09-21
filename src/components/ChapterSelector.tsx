@@ -20,13 +20,14 @@ export const ChapterSelector: React.FC<ChapterSelectorProps> = ({
   const [activeTab, setActiveTab] = useState<'preset' | 'custom'>('preset');
   
   // Custom generation state
-  const [selectedBook, setSelectedBook] = useState<string>('Ewangelia wg św. Jana');
-  const [chapterNumber, setChapterNumber] = useState<string>('1');
+  const [selectedBook, setSelectedBook] = useState<string>('Ewangelia Łukasza');
+  const [chapterNumber, setChapterNumber] = useState<string>('15');
   const [versesRange, setVersesRange] = useState<string>('');
   const [customText, setCustomText] = useState<string>('');
-  const [translation, setTranslation] = useState<string>('Biblia Tysiąclecia');
+  const [translation, setTranslation] = useState<string>('Uwspółcześniona Biblia Gdańska (UBG 2024)');
   const [dramaStyle, setDramaStyle] = useState<string>('Pełne słuchowisko radiowe z efektami SFX');
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [isLoadingUbg, setIsLoadingUbg] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   if (!isOpen) return null;
@@ -76,6 +77,29 @@ export const ChapterSelector: React.FC<ChapterSelectorProps> = ({
       setErrorMessage(err.message || 'Wystąpił błąd podczas adaptacji radiowej.');
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleLoadUbgText = async () => {
+    setIsLoadingUbg(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch('/api/bible/ubg/chapter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          book: selectedBook,
+          chapter: parseInt(chapterNumber || '1', 10) || 1,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Nie udało się pobrać tekstu z UBG');
+      setCustomText(data.text);
+      setTranslation('Uwspółcześniona Biblia Gdańska (UBG 2024)');
+    } catch (e: any) {
+      setErrorMessage(e.message || 'Błąd podczas wczytywania rozdziału z UBG');
+    } finally {
+      setIsLoadingUbg(false);
     }
   };
 
@@ -258,6 +282,7 @@ export const ChapterSelector: React.FC<ChapterSelectorProps> = ({
                     onChange={(e) => setTranslation(e.target.value)}
                     className="w-full bg-stone-950 border border-stone-700 rounded-lg px-3 py-2 text-xs text-stone-200 focus:outline-none focus:border-amber-500"
                   >
+                    <option value="Uwspółcześniona Biblia Gdańska (UBG 2024)">Uwspółcześniona Biblia Gdańska (UBG 2024 - Domyślna)</option>
                     <option value="Biblia Tysiąclecia">Biblia Tysiąclecia (Liturgiczna)</option>
                     <option value="Biblia Paulistów">Edycja Świętego Pawła (Paulistów)</option>
                     <option value="Biblia Warszawska">Biblia Warszawska</option>
@@ -268,14 +293,25 @@ export const ChapterSelector: React.FC<ChapterSelectorProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-stone-300 mb-1">
-                  Własny tekst rozdziału lub fragmentu (opcjonalnie)
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-stone-300">
+                    Oryginalny tekst rozdziału lub fragmentu:
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleLoadUbgText}
+                    disabled={isLoadingUbg}
+                    className="text-[11px] font-semibold text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
+                  >
+                    <BookOpen className="w-3 h-3" />
+                    <span>{isLoadingUbg ? 'Wczytywanie z PDF...' : 'Wczytaj z oficjalnego PDF UBG'}</span>
+                  </button>
+                </div>
                 <textarea
                   value={customText}
                   onChange={(e) => setCustomText(e.target.value)}
-                  placeholder="Wklej tutaj tekst fragmentu, jeśli masz własny ulubiony przekład..."
-                  rows={3}
+                  placeholder="Kliknij 'Wczytaj z oficjalnego PDF UBG' powyżej lub wklej własny tekst..."
+                  rows={4}
                   className="w-full bg-stone-950 border border-stone-700 rounded-lg p-2.5 text-xs text-stone-200 focus:outline-none focus:border-amber-500 placeholder:text-stone-600 font-sans"
                 />
               </div>
