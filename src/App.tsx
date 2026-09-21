@@ -18,8 +18,12 @@ import { createDefaultVideoSettings, calculateSubtitleCues } from './lib/videoUt
 import { DramaCharacter, DramaLine, GeneratedAudioClip, ProductionProject, VideoSettings } from './types';
 import { pcm16Base64ToWavUrl } from './lib/audioUtils';
 import { studioFetch } from './lib/apiClient';
-
-const STORAGE_KEY = 'biblia_audio_studio_projects';
+import {
+  safeSaveToLocalStorage,
+  saveProjectsToIDB,
+  loadProjectsFromIDB,
+  STORAGE_KEY,
+} from './lib/projectStorage';
 
 export default function App() {
   // Projects State
@@ -141,24 +145,24 @@ export default function App() {
     percent: 0,
   });
 
-  // Sync projects to localStorage
+  // Initial restore from IndexedDB if available
   useEffect(() => {
-    try {
-      const safeProjects = projects.map((project) => ({
-        ...project,
-        generatedClips: project.generatedClips.map((clip) => ({
-          ...clip,
-          audioBase64: '',
-          audioUrl: undefined,
-        })),
-        masterAudioWavUrl: undefined,
-        masterAudioMp3Url: undefined,
-        renderedVideoMp4Url: undefined,
-      }));
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(safeProjects));
-    } catch (e) {
-      console.warn('Failed to save projects to localStorage:', e);
-    }
+    loadProjectsFromIDB().then((idbProjects) => {
+      if (idbProjects && idbProjects.length > 0) {
+        setProjects((current) => {
+          if (current.length === 1 && current[0].id === 'proj_luke_15_demo') {
+            return idbProjects;
+          }
+          return current;
+        });
+      }
+    });
+  }, []);
+
+  // Sync projects to IndexedDB & Safe LocalStorage (Zero QuotaExceededError)
+  useEffect(() => {
+    safeSaveToLocalStorage(projects);
+    saveProjectsToIDB(projects);
   }, [projects]);
 
   const currentProject =
