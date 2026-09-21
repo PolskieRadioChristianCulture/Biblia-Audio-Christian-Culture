@@ -40,8 +40,11 @@ import {
   generateYouTubeTimestamps,
 } from '../lib/videoUtils';
 import { ThumbnailGeneratorModal } from './ThumbnailGeneratorModal';
+import { CommunityAuthModal } from './CommunityAuthModal';
+import { DonationSupportModal } from './DonationSupportModal';
 import { useStudioPlayback } from '../lib/useStudioPlayback';
 import { formatDuration } from '../lib/customAudioUtils';
+import { Heart, Lock, UserCheck, LogOut } from 'lucide-react';
 
 interface Step8ExportPublishProps {
   project: ProductionProject;
@@ -58,6 +61,45 @@ export const Step8ExportPublish: React.FC<Step8ExportPublishProps> = ({
   const [isZipping, setIsZipping] = useState<boolean>(false);
   const [zipProgressText, setZipProgressText] = useState<string>('');
   const [isThumbnailModalOpen, setIsThumbnailModalOpen] = useState<boolean>(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+  const [isDonationModalOpen, setIsDonationModalOpen] = useState<boolean>(false);
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+
+  // Community Member Auth State
+  const [currentUser, setCurrentUser] = useState<{ name: string; email?: string; role?: string } | null>(() => {
+    try {
+      const stored = localStorage.getItem('cc_community_member');
+      if (stored) return JSON.parse(stored);
+      const lumina = localStorage.getItem('lumina_my_profile');
+      if (lumina) {
+        const p = JSON.parse(lumina);
+        if (p?.name) return { name: p.name, email: p.email, role: 'Członek LUMINA' };
+      }
+    } catch {}
+    return null;
+  });
+
+  const handleGuardedAction = (action: () => void) => {
+    if (!currentUser) {
+      setPendingAction(() => action);
+      setIsAuthModalOpen(true);
+    } else {
+      action();
+    }
+  };
+
+  const handleLoginSuccess = (user: { name: string; email?: string; role?: string }) => {
+    setCurrentUser(user);
+    if (pendingAction) {
+      pendingAction();
+      setPendingAction(null);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('cc_community_member');
+    setCurrentUser(null);
+  };
 
   // Unified Central Playback Engine
   const playback = useStudioPlayback(project);
@@ -80,17 +122,19 @@ export const Step8ExportPublish: React.FC<Step8ExportPublishProps> = ({
     setTimeout(() => setCopiedField(null), 2500);
   };
 
-  // Download complete ZIP
+  // Download complete ZIP (Guarded: only for logged in members)
   const handleDownloadZip = async () => {
-    try {
-      setIsZipping(true);
-      await downloadPublicationZipBundle(project, undefined, (msg) => setZipProgressText(msg));
-    } catch (e) {
-      console.error('ZIP creation error:', e);
-    } finally {
-      setIsZipping(false);
-      setZipProgressText('');
-    }
+    handleGuardedAction(async () => {
+      try {
+        setIsZipping(true);
+        await downloadPublicationZipBundle(project, undefined, (msg) => setZipProgressText(msg));
+      } catch (e) {
+        console.error('ZIP creation error:', e);
+      } finally {
+        setIsZipping(false);
+        setZipProgressText('');
+      }
+    });
   };
 
   const customVoiceLinesCount = lines.filter((l) => Boolean(l.customAudioFile)).length;
@@ -125,9 +169,104 @@ export const Step8ExportPublish: React.FC<Step8ExportPublishProps> = ({
           disabled={isZipping}
           className="flex items-center gap-2.5 px-5 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 font-bold text-xs shadow-lg transition-all hover:scale-102 shrink-0"
         >
-          <Archive className="w-4 h-4" />
+          {currentUser ? <Archive className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
           <span>{isZipping ? zipProgressText || 'Pobieranie ZIP...' : 'POBIERZ CAŁY PAKIET ZIP'}</span>
         </button>
+      </div>
+
+      {/* STRATEGIC OPTION 1 & 2 DUAL PANELS */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* OPTION 1: COMMUNITY MEMBERSHIP GATE */}
+        {currentUser ? (
+          <div className="bg-gradient-to-r from-emerald-950/60 via-[#10151d] to-[#10151d] border border-emerald-600/50 rounded-2xl p-4.5 shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 font-mono">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center shrink-0">
+                <UserCheck size={20} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-white truncate">
+                    Zalogowano: <strong className="text-emerald-300">{currentUser.name}</strong>
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase font-bold">
+                    {currentUser.role || 'Członek Społeczności'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-stone-300 mt-0.5">
+                  🟢 Status aktywny • Pełny dostęp do pobierania plików Master WAV/MP3/MP4 odblokowany.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#18212e] hover:bg-[#243144] text-stone-300 hover:text-white border border-[#2b394e] text-xs transition-colors shrink-0"
+              title="Wyloguj się z tego profilu"
+            >
+              <LogOut size={13} />
+              <span>Wyloguj</span>
+            </button>
+          </div>
+        ) : (
+          <div className="bg-gradient-to-r from-amber-950/70 via-[#131720] to-[#131720] border border-amber-600/60 rounded-2xl p-4.5 shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 font-mono">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 text-stone-950 flex items-center justify-center font-black shadow-md shrink-0">
+                <Lock size={20} className="stroke-[2.5]" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-amber-300 uppercase tracking-wider">
+                    Opcja 1: Brama Społeczności
+                  </span>
+                  <span className="text-[10px] px-2 py-0.2 rounded bg-amber-500/20 text-amber-200 border border-amber-500/30 font-bold">
+                    Tylko Członkowie
+                  </span>
+                </div>
+                <p className="text-[11px] text-stone-300 mt-0.5">
+                  Pobieranie gotowych audycji Master jest zastrzeżone dla zalogowanych członków Christian Culture.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsAuthModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 font-bold text-xs shadow-md transition-all hover:scale-102 shrink-0"
+            >
+              <UserCheck size={15} />
+              <span>ZALOGUJ SIĘ</span>
+            </button>
+          </div>
+        )}
+
+        {/* OPTION 2: FINANCIAL SUPPORT / DONATION BANNER */}
+        <div className="bg-gradient-to-r from-rose-950/50 via-[#131720] to-[#131720] border border-rose-700/50 rounded-2xl p-4.5 shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 font-mono">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-400 flex items-center justify-center shrink-0">
+              <Heart size={20} className="fill-current text-rose-400" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-rose-300 uppercase tracking-wider">
+                  Opcja 2: Mecenat CC STUDIO
+                </span>
+                <span className="text-[10px] px-2 py-0.2 rounded bg-rose-500/20 text-rose-200 border border-rose-500/30 font-bold">
+                  Dar Dobrowolny
+                </span>
+              </div>
+              <p className="text-[11px] text-stone-300 mt-0.5">
+                Darmowe narzędzie ewangelizacyjne. Wspieraj serwery renderujące 4K i AI dobrowolnym darem!
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsDonationModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-bold text-xs shadow-md transition-all hover:scale-102 shrink-0"
+          >
+            <Heart size={14} className="fill-current" />
+            <span>WESPRZYJ DAREM</span>
+          </button>
+        </div>
       </div>
 
       {/* FULLY FUNCTIONAL STUDIO AUDIO MONITOR & STEM PLAYER */}
@@ -439,14 +578,22 @@ export const Step8ExportPublish: React.FC<Step8ExportPublishProps> = ({
               </div>
 
               {project.renderedVideoMp4Url ? (
-                <a
-                  href={project.renderedVideoMp4Url}
-                  download={`${project.bookName}_Rozdzial_${project.chapterNumber}_Christian_Culture.mp4`}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold shadow"
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleGuardedAction(() => {
+                      const a = document.createElement('a');
+                      a.href = project.renderedVideoMp4Url!;
+                      a.download = `${project.bookName}_Rozdzial_${project.chapterNumber}_Christian_Culture.mp4`;
+                      a.click();
+                    })
+                  }
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold shadow transition-all hover:scale-102"
+                  title={currentUser ? 'Pobierz film MP4' : 'Wymagane zalogowanie członka społeczności'}
                 >
-                  <Download className="w-3.5 h-3.5" />
+                  {currentUser ? <Download className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
                   <span>Pobierz MP4</span>
-                </a>
+                </button>
               ) : (
                 <span className="text-[11px] text-stone-500 italic bg-stone-950 px-2.5 py-1 rounded-lg border border-stone-800">
                   Wymaga wyrenderowania w Kroku 7
@@ -471,14 +618,22 @@ export const Step8ExportPublish: React.FC<Step8ExportPublishProps> = ({
               </div>
 
               {project.masterAudioWavUrl ? (
-                <a
-                  href={project.masterAudioWavUrl}
-                  download={`${project.title.replace(/\s+/g, '_')}_Master_48kHz.wav`}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow"
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleGuardedAction(() => {
+                      const a = document.createElement('a');
+                      a.href = project.masterAudioWavUrl!;
+                      a.download = `${project.title.replace(/\s+/g, '_')}_Master_48kHz.wav`;
+                      a.click();
+                    })
+                  }
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow transition-all hover:scale-102"
+                  title={currentUser ? 'Pobierz plik WAV' : 'Wymagane zalogowanie członka społeczności'}
                 >
-                  <Download className="w-3.5 h-3.5" />
+                  {currentUser ? <Download className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
                   <span>Pobierz WAV</span>
-                </a>
+                </button>
               ) : (
                 <button
                   type="button"
@@ -508,14 +663,22 @@ export const Step8ExportPublish: React.FC<Step8ExportPublishProps> = ({
               </div>
 
               {project.masterAudioMp3Url ? (
-                <a
-                  href={project.masterAudioMp3Url}
-                  download={`${project.title.replace(/\s+/g, '_')}_Podcast_192k.mp3`}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow"
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleGuardedAction(() => {
+                      const a = document.createElement('a');
+                      a.href = project.masterAudioMp3Url!;
+                      a.download = `${project.title.replace(/\s+/g, '_')}_Podcast_192k.mp3`;
+                      a.click();
+                    })
+                  }
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow transition-all hover:scale-102"
+                  title={currentUser ? 'Pobierz plik MP3' : 'Wymagane zalogowanie członka społeczności'}
                 >
-                  <Download className="w-3.5 h-3.5" />
+                  {currentUser ? <Download className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
                   <span>Pobierz MP3</span>
-                </a>
+                </button>
               ) : (
                 <button
                   type="button"
@@ -670,6 +833,25 @@ export const Step8ExportPublish: React.FC<Step8ExportPublishProps> = ({
           onClose={() => setIsThumbnailModalOpen(false)}
         />
       )}
+
+      {/* Community Auth Modal (Option 1) */}
+      <CommunityAuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onLoginSuccess={handleLoginSuccess}
+      />
+
+      {/* Donation & Patronage Modal (Option 2) */}
+      <DonationSupportModal
+        isOpen={isDonationModalOpen}
+        onClose={() => setIsDonationModalOpen(false)}
+        onProceedAnyway={() => {
+          if (pendingAction) {
+            pendingAction();
+            setPendingAction(null);
+          }
+        }}
+      />
     </div>
   );
 };

@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { CustomAudioTrack } from '../types';
 import { readAudioFile, formatDuration, formatBytes } from '../lib/customAudioUtils';
+import { VoiceRecorderModal } from './VoiceRecorderModal';
 
 interface CustomAudioUploaderProps {
   label: string;
@@ -23,6 +24,8 @@ interface CustomAudioUploaderProps {
   onTrackUploaded: (track: CustomAudioTrack) => void;
   onTrackRemoved: () => void;
   compact?: boolean;
+  lineText?: string;
+  characterName?: string;
 }
 
 export const CustomAudioUploader: React.FC<CustomAudioUploaderProps> = ({
@@ -33,11 +36,14 @@ export const CustomAudioUploader: React.FC<CustomAudioUploaderProps> = ({
   onTrackUploaded,
   onTrackRemoved,
   compact = false,
+  lineText,
+  characterName,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  const [isRecorderOpen, setIsRecorderOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -175,17 +181,37 @@ export const CustomAudioUploader: React.FC<CustomAudioUploaderProps> = ({
             </button>
           </div>
         ) : (
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isProcessing}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#1b222e] hover:bg-[#263142] text-stone-300 hover:text-white border border-[#2d3a4c] text-xs font-mono transition-colors"
-            title="Wgraj własny plik audio dla tej kwestii (MP3, WAV)"
-          >
-            <UploadCloud className="w-3.5 h-3.5 text-[#ff8c1a]" />
-            <span>{isProcessing ? 'Wczytywanie...' : 'Wgraj audio (MP3/WAV)'}</span>
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setIsRecorderOpen(true)}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-950/70 hover:bg-red-900/80 text-red-300 hover:text-white border border-red-800/70 text-xs font-mono transition-all shadow-sm"
+              title="Nagraj recytację tej kwestii na żywo z mikrofonu"
+            >
+              <Mic className="w-3.5 h-3.5 text-red-400" />
+              <span>Nagraj recytację</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isProcessing}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#1b222e] hover:bg-[#263142] text-stone-300 hover:text-white border border-[#2d3a4c] text-xs font-mono transition-colors"
+              title="Wgraj własny plik audio dla tej kwestii (MP3, WAV)"
+            >
+              <UploadCloud className="w-3.5 h-3.5 text-[#ff8c1a]" />
+              <span>{isProcessing ? '...' : 'Wgraj plik'}</span>
+            </button>
+          </div>
         )}
+
+        <VoiceRecorderModal
+          isOpen={isRecorderOpen}
+          onClose={() => setIsRecorderOpen(false)}
+          onRecordingComplete={onTrackUploaded}
+          characterName={characterName}
+          lineText={lineText}
+          title={`Studio Recytacji: ${label}`}
+        />
       </div>
     );
   }
@@ -287,27 +313,49 @@ export const CustomAudioUploader: React.FC<CustomAudioUploaderProps> = ({
           </div>
         </div>
       ) : (
-        /* Drag-and-Drop + Manual Click Zone */
-        <div
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all ${
-            isDragging
-              ? 'border-[#ff8c1a] bg-[#ff8c1a]/10 text-white'
-              : 'border-[#2d3a4d] hover:border-[#ff8c1a]/60 bg-[#0d1016] hover:bg-[#141a24] text-stone-400 hover:text-stone-200'
-          }`}
-        >
-          <UploadCloud className="w-7 h-7 mx-auto mb-2 text-[#ff8c1a]" />
-          <p className="text-xs sm:text-sm font-bold text-stone-200">
-            {isProcessing ? 'Wczytywanie pliku audio...' : 'Przeciągnij i upuść plik audio lub kliknij, aby wybrać'}
-          </p>
-          <p className="text-[11px] text-stone-500 mt-1">
-            Obsługiwane formaty: MP3, WAV, M4A, OGG, AAC (ze studia nagrań lub własnej biblioteki)
-          </p>
+        /* Drag-and-Drop + Live Recording Zone */
+        <div className="space-y-3">
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all ${
+              isDragging
+                ? 'border-[#ff8c1a] bg-[#ff8c1a]/10 text-white'
+                : 'border-[#2d3a4d] hover:border-[#ff8c1a]/60 bg-[#0d1016] hover:bg-[#141a24] text-stone-400 hover:text-stone-200'
+            }`}
+          >
+            <UploadCloud className="w-7 h-7 mx-auto mb-2 text-[#ff8c1a]" />
+            <p className="text-xs sm:text-sm font-bold text-stone-200">
+              {isProcessing ? 'Wczytywanie pliku audio...' : 'Przeciągnij i upuść plik audio lub kliknij, aby wybrać z dysku'}
+            </p>
+            <p className="text-[11px] text-stone-500 mt-1">
+              Obsługiwane formaty: MP3, WAV, M4A, OGG, AAC (ze studia nagrań lub własnej biblioteki)
+            </p>
+          </div>
+
+          <div className="flex items-center justify-center">
+            <button
+              type="button"
+              onClick={() => setIsRecorderOpen(true)}
+              className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-red-950/80 via-red-900/60 to-red-950/80 hover:from-red-900 hover:to-red-800 text-red-200 hover:text-white border border-red-700/60 text-xs font-bold font-mono transition-all shadow-md hover:shadow-red-950/50"
+            >
+              <Mic className="w-4 h-4 text-red-400 animate-pulse" />
+              <span>NAGRAJ WŁASNĄ RECYTACJĘ / GŁOS NA ŻYWO (MIKROFON)</span>
+            </button>
+          </div>
         </div>
       )}
+
+      <VoiceRecorderModal
+        isOpen={isRecorderOpen}
+        onClose={() => setIsRecorderOpen(false)}
+        onRecordingComplete={onTrackUploaded}
+        characterName={characterName}
+        lineText={lineText}
+        title={`Studio Recytacji: ${label}`}
+      />
     </div>
   );
 };

@@ -364,9 +364,11 @@ export const Step3ScriptEditor: React.FC<Step3ScriptEditorProps> = ({
                   </div>
                   <CustomAudioUploader
                     compact
-                    label="Własne audio lektora"
+                    label={`Kwestia #${line.id}`}
                     trackType="voice"
                     currentTrack={line.customAudioFile}
+                    lineText={line.text}
+                    characterName={line.characterName}
                     onTrackUploaded={(track) => {
                       handleUpdateLine(line.id, { customAudioFile: track });
                       const existingClips = project.generatedClips || [];
