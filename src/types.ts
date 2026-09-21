@@ -31,6 +31,16 @@ export interface DramaCharacter {
   pronunciationNotes?: string;
 }
 
+export interface CustomAudioTrack {
+  fileName: string;
+  fileSizeBytes: number;
+  audioUrl: string;
+  durationSec: number;
+  uploadedAt: number;
+  mimeType?: string;
+  base64?: string;
+}
+
 export interface DramaLine {
   id: string;
   sceneNumber: number;
@@ -50,6 +60,7 @@ export interface DramaLine {
   requiresManualReview?: boolean;
   cachedAudioBase64?: string;
   cachedAudioDurationSec?: number;
+  customAudioFile?: CustomAudioTrack;
 }
 
 export interface PodcastMetadata {
@@ -116,6 +127,10 @@ export interface AudioMixerSettings {
   outroVoice?: GeminiVoiceName;
   includeStationJingle?: boolean;
   backgroundMusic?: MusicAtmosphere;
+  customMusicTrack?: CustomAudioTrack;
+  customJingleTrack?: CustomAudioTrack;
+  customIntroTrack?: CustomAudioTrack;
+  customOutroTrack?: CustomAudioTrack;
   musicVolume: number;    // 0 - 100
   voiceVolume: number;    // 0 - 100
   sfxVolume: number;      // 0 - 100

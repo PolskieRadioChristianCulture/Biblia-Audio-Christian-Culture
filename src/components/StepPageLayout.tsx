@@ -73,41 +73,41 @@ export const StepPageLayout: React.FC<StepPageLayoutProps> = ({
           </div>
         </div>
 
-        <div className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
+        <div className="p-4 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1.5">
             {/* Breadcrumb & Phase */}
-            <div className="flex items-center gap-2 text-[11px] font-mono font-bold tracking-wider uppercase text-[#ff8c1a]">
+            <div className="flex items-center gap-2 text-xs sm:text-sm font-mono font-bold tracking-wider uppercase text-[#ff8c1a]">
               <span>KROK 0{currentStep} / 0{PRODUCTION_STEPS.length}</span>
               <span className="text-stone-600">•</span>
-              <span className="text-stone-300">{activeStepDef.shortLabel}</span>
+              <span className="text-stone-200">{activeStepDef.shortLabel}</span>
               <span className="text-stone-600">•</span>
               <span className="text-[#00d2d3]">{progressPercent}% PRODUKCJI</span>
             </div>
 
             {/* Page Title & Icon */}
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-[#1e2532] border border-[#374358] text-[#ff8c1a] flex items-center justify-center shadow-[0_0_12px_rgba(255,122,0,0.2)] shrink-0">
-                <StepIcon className="w-4 h-4" />
+              <div className="w-11 h-11 rounded-xl bg-[#1e2532] border border-[#374358] text-[#ff8c1a] flex items-center justify-center shadow-[0_0_14px_rgba(255,122,0,0.25)] shrink-0">
+                <StepIcon className="w-5 h-5" />
               </div>
-              <h1 className="text-lg sm:text-xl font-black text-white tracking-tight font-mono">
+              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight font-mono">
                 {activeStepDef.title}
               </h1>
             </div>
 
             {/* Page Subtitle / Purpose */}
-            <p className="text-xs text-stone-400 max-w-3xl leading-relaxed">
+            <p className="text-sm sm:text-base text-stone-200 max-w-3xl leading-relaxed">
               {activeStepDef.subtitle}
             </p>
           </div>
 
           {/* Project Active Context Badge & Jump Navigator */}
           <div className="flex items-center gap-3 self-start md:self-center shrink-0">
-            <div className="hidden sm:flex flex-col items-end text-right px-3 py-1.5 rounded-lg bg-[#0e1116] border border-[#293241] text-xs font-mono">
-              <span className="font-bold text-white flex items-center gap-1.5">
-                <BookOpen className="w-3.5 h-3.5 text-[#ff8c1a]" />
+            <div className="hidden sm:flex flex-col items-end text-right px-3.5 py-2 rounded-lg bg-[#0e1116] border border-[#293241] text-xs font-mono">
+              <span className="font-bold text-white flex items-center gap-1.5 text-sm">
+                <BookOpen className="w-4 h-4 text-[#ff8c1a]" />
                 {project.bookName} {project.chapterNumber}
               </span>
-              <span className="text-[10px] text-stone-400">
+              <span className="text-xs text-stone-300 font-medium">
                 {lineCount > 0 ? `${lineCount} kwestii` : '0 kwestii'} •{' '}
                 {characterCount > 0 ? `${characterCount} postaci` : '0 postaci'}
               </span>
@@ -118,10 +118,10 @@ export const StepPageLayout: React.FC<StepPageLayoutProps> = ({
               <button
                 type="button"
                 onClick={() => setIsJumpMenuOpen(!isJumpMenuOpen)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1e2430] hover:bg-[#283141] text-stone-200 text-xs font-mono font-medium border border-[#343e50] transition-colors"
+                className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#1e2430] hover:bg-[#283141] text-white text-xs sm:text-sm font-mono font-bold border border-[#343e50] transition-colors shadow-sm"
                 title="Wybierz moduł z listy"
               >
-                <ListOrdered className="w-3.5 h-3.5 text-[#ff8c1a]" />
+                <ListOrdered className="w-4 h-4 text-[#ff8c1a]" />
                 <span className="hidden sm:inline">RACK ({currentStep}/8)</span>
                 <span className="sm:hidden">RACK {currentStep}/8</span>
               </button>
@@ -185,34 +185,34 @@ export const StepPageLayout: React.FC<StepPageLayoutProps> = ({
       <div className="min-h-[500px]">{children}</div>
 
       {/* Bottom Page Navigation Bar: One Step = One Page */}
-      <div className="rounded-2xl bg-stone-900/90 border border-stone-800 p-4 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div className="rounded-2xl bg-stone-900/95 border border-[#374358] p-5 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
         {/* Previous Step Button */}
         <div>
           {prevStepDef ? (
             <button
               type="button"
               onClick={() => onSelectStep(prevStepDef.num)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 hover:text-white text-xs sm:text-sm font-medium border border-stone-700 transition-all hover:scale-102"
+              className="flex items-center gap-2.5 px-5 py-3 rounded-xl bg-[#202734] hover:bg-[#2c3647] text-white text-sm sm:text-base font-bold border border-[#3e4c63] transition-all hover:scale-102 shadow-sm"
             >
-              <ChevronLeft className="w-4 h-4 text-amber-400" />
+              <ChevronLeft className="w-5 h-5 text-[#ff8c1a]" />
               <span>
                 Wróć: Krok {prevStepDef.num} ({prevStepDef.shortLabel})
               </span>
             </button>
           ) : (
-            <div className="text-xs text-stone-500 italic">
+            <div className="text-sm text-stone-400 italic">
               To jest pierwsza strona produkcji
             </div>
           )}
         </div>
 
         {/* Center Current Page Indicator */}
-        <div className="flex items-center gap-2 text-xs text-stone-400">
-          <span className="font-semibold text-stone-200">
+        <div className="flex items-center gap-2.5 text-sm sm:text-base text-stone-300 font-mono">
+          <span className="font-bold text-white">
             Strona {currentStep} z {PRODUCTION_STEPS.length}
           </span>
           <span>•</span>
-          <span className="text-amber-400 font-medium">{activeStepDef.shortLabel}</span>
+          <span className="text-[#ff8c1a] font-bold">{activeStepDef.shortLabel}</span>
         </div>
 
         {/* Next Step Button */}
@@ -221,21 +221,21 @@ export const StepPageLayout: React.FC<StepPageLayoutProps> = ({
             <button
               type="button"
               onClick={() => onSelectStep(nextStepDef.num)}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 text-xs sm:text-sm font-bold shadow-lg transition-all hover:scale-102"
+              className="flex items-center gap-2.5 px-6 py-3 rounded-xl bg-gradient-to-r from-[#ff8c1a] to-[#d65f00] hover:from-[#ffa033] hover:to-[#e66800] text-black text-sm sm:text-base font-black shadow-[0_0_18px_rgba(255,122,0,0.5)] transition-all hover:scale-102 border border-[#ffa33a]"
             >
               <span>
                 Przejdź: Krok {nextStepDef.num} ({nextStepDef.shortLabel})
               </span>
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-5 h-5" />
             </button>
           ) : (
             <button
               type="button"
               onClick={() => onSelectStep(1)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-300 text-xs sm:text-sm font-medium border border-amber-500/30 transition-all"
+              className="flex items-center gap-2.5 px-5 py-3 rounded-xl bg-[#202734] hover:bg-[#2c3647] text-[#ff8c1a] text-sm sm:text-base font-bold border border-[#ff8c1a]/40 transition-all"
             >
               <span>Zacznij nową audycję</span>
-              <ArrowRight className="w-4 h-4" />
+              <ArrowRight className="w-5 h-5" />
             </button>
           )}
         </div>

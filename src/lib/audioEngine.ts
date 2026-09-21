@@ -28,8 +28,11 @@ export class DramaAudioEngine {
     return this.ctx;
   }
 
-  // Play Christian Culture Station Identification Jingle
-  public playStationJingle(): Promise<void> {
+  // Play Christian Culture Station Identification Jingle or custom uploaded jingle
+  public playStationJingle(customJingleUrl?: string): Promise<void> {
+    if (customJingleUrl) {
+      return this.playCustomAudio(customJingleUrl, 0.9);
+    }
     const ctx = this.initContext();
     return new Promise((resolve) => {
       const now = ctx.currentTime;
@@ -56,6 +59,21 @@ export class DramaAudioEngine {
       setTimeout(() => {
         resolve();
       }, (notes.length * 0.35 + 1.2) * 1000);
+    });
+  }
+
+  // Play custom uploaded audio file (blob / object URL or MP3/WAV)
+  public playCustomAudio(audioUrl: string, volume: number = 1.0): Promise<void> {
+    this.stopVoice();
+    return new Promise((resolve) => {
+      const audio = new Audio(audioUrl);
+      audio.volume = Math.min(1.0, Math.max(0, volume));
+      audio.onended = () => resolve();
+      audio.onerror = () => resolve();
+      audio.play().catch((err) => {
+        console.warn('Custom audio playback error:', err);
+        resolve();
+      });
     });
   }
 

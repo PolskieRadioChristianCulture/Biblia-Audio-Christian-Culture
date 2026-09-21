@@ -19,8 +19,19 @@ import {
   ZoomOut,
   Disc,
   Video,
+  UploadCloud,
+  Folder,
+  Music,
+  Radio,
+  ChevronDown,
+  ChevronUp,
+  Trash2,
+  Mic,
 } from 'lucide-react';
-import { GeneratedAudioClip, ProductionProject } from '../types';
+import { GeneratedAudioClip, ProductionProject, CustomAudioTrack } from '../types';
+import { CustomAudioUploader } from './CustomAudioUploader';
+import { formatDuration } from '../lib/customAudioUtils';
+import { useStudioPlayback } from '../lib/useStudioPlayback';
 
 interface Step6TimelineProps {
   project: ProductionProject;
@@ -55,9 +66,12 @@ export const Step6Timeline: React.FC<Step6TimelineProps> = ({
   onSynthesizeSingleLine,
   onClearTtsCache,
 }) => {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentLineIndex, setCurrentLineIndex] = useState(0);
+  const playback = useStudioPlayback(project);
+  const isPlaying = playback.isPlaying && !playback.isPaused;
+  const currentLineIndex = playback.currentLineIndex;
+
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [showCustomAudioDock, setShowCustomAudioDock] = useState(false);
   const [mutedTracks, setMutedTracks] = useState<{ [track: string]: boolean }>({
     narrator: false,
     characters: false,
@@ -65,8 +79,6 @@ export const Step6Timeline: React.FC<Step6TimelineProps> = ({
     sfx: false,
     introOutro: false,
   });
-
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const lines = project.script?.lines || [];
   const characters = project.script?.characters || [];
@@ -77,71 +89,62 @@ export const Step6Timeline: React.FC<Step6TimelineProps> = ({
 
   const toggleMute = (trackKey: string) => {
     setMutedTracks((prev) => ({ ...prev, [trackKey]: !prev[trackKey] }));
+    if (trackKey === 'music') playback.toggleMute('music');
+    if (trackKey === 'sfx') playback.toggleMute('fx');
   };
 
-  // Playback control
+  // Playback control synchronized with central engine
   const handleTogglePlay = () => {
-    if (isPlaying) {
-      setIsPlaying(false);
-      if (audioRef.current) {
-        audioRef.current.pause();
-      }
-    } else {
-      setIsPlaying(true);
-      playLine(currentLineIndex);
-    }
+    playback.togglePlay();
   };
 
   const playLine = (index: number) => {
-    if (index < 0 || index >= lines.length) {
-      setIsPlaying(false);
-      return;
-    }
-    setCurrentLineIndex(index);
-    const line = lines[index];
-    const clip = generatedClips.find((c) => c.lineId === line.id);
-
-    if (clip && clip.audioUrl) {
-      if (!audioRef.current) {
-        audioRef.current = new Audio();
-      }
-      audioRef.current.src = clip.audioUrl;
-      audioRef.current.playbackRate = line.tempoMultiplier || 1.0;
-      audioRef.current.onended = () => {
-        const pause = line.pauseAfterMs || 700;
-        setTimeout(() => {
-          if (index + 1 < lines.length) {
-            playLine(index + 1);
-          } else {
-            setIsPlaying(false);
-          }
-        }, pause);
-      };
-      audioRef.current.play().catch((e) => {
-        console.warn('Playback error:', e);
-        setIsPlaying(false);
-      });
-    } else {
-      // If clip is not yet generated, simulate brief playback or fallback
-      const timer = setTimeout(() => {
-        if (index + 1 < lines.length) {
-          playLine(index + 1);
-        } else {
-          setIsPlaying(false);
-        }
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
+    playback.seekToLine(index);
   };
 
   const handleStop = () => {
-    setIsPlaying(false);
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-    }
-    setCurrentLineIndex(0);
+    playback.stop();
   };
+
+  const handleUpdateLineCustomAudio = (lineId: string, track?: CustomAudioTrack) => {
+    const updatedLines = lines.map((l) => (l.id === lineId ? { ...l, customAudioFile: track } : l));
+    const existingClips = generatedClips.filter((c) => c.lineId !== lineId);
+    if (track) {
+      const targetLine = lines.find((l) => l.id === lineId);
+      existingClips.push({
+        lineId,
+        characterId: targetLine?.characterId || '',
+        audioBase64: track.base64 || '',
+        audioUrl: track.audioUrl,
+        durationSec: track.durationSec,
+      });
+    }
+    onUpdateProject({
+      script: { ...project.script, lines: updatedLines },
+      generatedClips: existingClips,
+    });
+  };
+
+  const handleUpdateMixerTrack = (
+    key: 'customMusicTrack' | 'customJingleTrack' | 'customIntroTrack' | 'customOutroTrack',
+    track?: CustomAudioTrack
+  ) => {
+    onUpdateProject({
+      mixerSettings: {
+        ...project.mixerSettings,
+        [key]: track,
+      },
+    });
+  };
+
+  const customVoiceCount = lines.filter((l) => Boolean(l.customAudioFile)).length;
+  const customMixerCount = [
+    project.mixerSettings?.customMusicTrack,
+    project.mixerSettings?.customJingleTrack,
+    project.mixerSettings?.customIntroTrack,
+    project.mixerSettings?.customOutroTrack,
+  ].filter(Boolean).length;
+  const customAudioCount = customVoiceCount + customMixerCount;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -300,6 +303,74 @@ export const Step6Timeline: React.FC<Step6TimelineProps> = ({
                 GEMINI AI
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Custom Audio Dock Toggle Banner */}
+        <div className="flex items-center justify-between p-3.5 bg-[#10141d] border border-[#263548] rounded-xl flex-wrap gap-2 font-mono">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-lg bg-amber-500/10 text-[#ff8c1a] border border-amber-500/30">
+              <Folder className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-white">WŁASNE PLIKI AUDIO (DŻINGIEL, MUZYKA, INTRO/OUTRO)</span>
+                {customAudioCount > 0 && (
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold">
+                    {customAudioCount} AKTYWNE
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-stone-400">
+                Wgrywaj własne nagrania lektorskie, oficjalny dżingiel radia oraz czołówkę audycji
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowCustomAudioDock(!showCustomAudioDock)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#18212e] hover:bg-[#222e40] text-amber-300 hover:text-white border border-[#2f3f58] text-xs font-bold transition-colors"
+          >
+            <span>{showCustomAudioDock ? 'Ukryj bibliotekę plików' : 'Zarządzaj własnymi plikami audio'}</span>
+            {showCustomAudioDock ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+
+        {/* Custom Audio Dock Accordion */}
+        {showCustomAudioDock && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <CustomAudioUploader
+              label="Własny podkład muzyczny"
+              description="Wgraj plik MP3/WAV, który będzie grał w tle całego słuchowiska"
+              trackType="music"
+              currentTrack={project.mixerSettings?.customMusicTrack}
+              onTrackUploaded={(track) => handleUpdateMixerTrack('customMusicTrack', track)}
+              onTrackRemoved={() => handleUpdateMixerTrack('customMusicTrack', undefined)}
+            />
+            <CustomAudioUploader
+              label="Dżingiel stacji radiowej"
+              description="Oficjalny identyfikator dźwiękowy stacji Christian Culture (MP3/WAV)"
+              trackType="jingle"
+              currentTrack={project.mixerSettings?.customJingleTrack}
+              onTrackUploaded={(track) => handleUpdateMixerTrack('customJingleTrack', track)}
+              onTrackRemoved={() => handleUpdateMixerTrack('customJingleTrack', undefined)}
+            />
+            <CustomAudioUploader
+              label="Czołówka / Intro audycji"
+              description="Dźwiękowy wstęp odtwarzany przed pierwszym wersetem (MP3/WAV)"
+              trackType="intro"
+              currentTrack={project.mixerSettings?.customIntroTrack}
+              onTrackUploaded={(track) => handleUpdateMixerTrack('customIntroTrack', track)}
+              onTrackRemoved={() => handleUpdateMixerTrack('customIntroTrack', undefined)}
+            />
+            <CustomAudioUploader
+              label="Tyłówka / Outro audycji"
+              description="Oficjalne zakończenie audycji i zapowiedź kolejnego odcinka (MP3/WAV)"
+              trackType="outro"
+              currentTrack={project.mixerSettings?.customOutroTrack}
+              onTrackUploaded={(track) => handleUpdateMixerTrack('customOutroTrack', track)}
+              onTrackRemoved={() => handleUpdateMixerTrack('customOutroTrack', undefined)}
+            />
           </div>
         )}
 
@@ -559,11 +630,36 @@ export const Step6Timeline: React.FC<Step6TimelineProps> = ({
               </div>
             </div>
 
-            <div className="flex-1 h-9 bg-[#0b0e13] rounded p-1 border border-[#222935] flex items-center px-3">
-              <div className="w-full h-4 rounded bg-[#2c173d] border border-[#5d2b86] flex items-center justify-between px-2 text-[9px] font-mono text-purple-300">
-                <span>WAVEFORM: SAKRALNY PODKŁAD SMYCZKOWY (EBU R128 DUCKED)</span>
-                <span className="text-[8px] text-purple-400">-12 dB AUTO-DUCK</span>
-              </div>
+            <div className="flex-1 h-9 bg-[#0b0e13] rounded p-1 border border-[#222935] flex items-center justify-between px-3">
+              {project.mixerSettings?.customMusicTrack ? (
+                <div className="flex items-center justify-between w-full">
+                  <div className="flex items-center gap-2 text-[10px] font-mono text-purple-200 truncate">
+                    <Music className="w-3 h-3 text-[#a55eea] shrink-0" />
+                    <span className="font-bold text-white truncate max-w-[280px]">
+                      WŁASNY PLIK: {project.mixerSettings.customMusicTrack.fileName}
+                    </span>
+                    <span className="text-stone-400">
+                      ({formatDuration(project.mixerSettings.customMusicTrack.durationSec)})
+                    </span>
+                    <span className="text-[8px] px-1.5 py-0.5 rounded bg-purple-950/80 text-purple-300 border border-purple-800">
+                      AUTO-DUCK -12dB
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateMixerTrack('customMusicTrack', undefined)}
+                    className="text-[9px] text-stone-400 hover:text-red-400 font-mono underline ml-2"
+                    title="Usuń własny plik podkładu i wróć do procedury"
+                  >
+                    Usuń
+                  </button>
+                </div>
+              ) : (
+                <div className="w-full h-4 rounded bg-[#2c173d] border border-[#5d2b86] flex items-center justify-between px-2 text-[9px] font-mono text-purple-300">
+                  <span>WAVEFORM: {project.mixerSettings?.backgroundMusic || 'SAKRALNY PODKŁAD'} (EBU R128 DUCKED)</span>
+                  <span className="text-[8px] text-purple-400">-12 dB AUTO-DUCK</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -639,7 +735,12 @@ export const Step6Timeline: React.FC<Step6TimelineProps> = ({
                 <span className="text-stone-500 font-mono">
                   [{lines[currentLineIndex].verseRef}]
                 </span>
-                {generatedClips.some((c) => c.lineId === lines[currentLineIndex].id && c.audioBase64) ? (
+                {lines[currentLineIndex].customAudioFile ? (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-700 flex items-center gap-1 font-bold">
+                    <CheckCircle2 className="w-2.5 h-2.5" />
+                    WŁASNE NAGRANIE ({formatDuration(lines[currentLineIndex].customAudioFile?.durationSec)})
+                  </span>
+                ) : generatedClips.some((c) => c.lineId === lines[currentLineIndex].id && c.audioBase64) ? (
                   <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#102919] text-[#2ecc71] border border-[#206338] flex items-center gap-1">
                     <CheckCircle2 className="w-2.5 h-2.5" />
                     PCM 24k READY
@@ -683,6 +784,22 @@ export const Step6Timeline: React.FC<Step6TimelineProps> = ({
             <p className="text-xs text-stone-200 font-sans leading-relaxed pl-2 border-l-2 border-[#ff7a00]">
               "{lines[currentLineIndex].text}"
             </p>
+
+            {/* Custom Audio Line Action */}
+            <div className="pt-2 border-t border-[#232c3d] flex items-center justify-between gap-2 flex-wrap text-xs">
+              <div className="flex items-center gap-2 text-stone-400">
+                <Mic className="w-3.5 h-3.5 text-[#ff8c1a]" />
+                <span>Własne nagranie dla tej kwestii (zamiast głosu AI):</span>
+              </div>
+              <CustomAudioUploader
+                compact
+                label="Własny plik audio"
+                trackType="voice"
+                currentTrack={lines[currentLineIndex].customAudioFile}
+                onTrackUploaded={(track) => handleUpdateLineCustomAudio(lines[currentLineIndex].id, track)}
+                onTrackRemoved={() => handleUpdateLineCustomAudio(lines[currentLineIndex].id, undefined)}
+              />
+            </div>
           </div>
         )}
       </div>

@@ -10,6 +10,8 @@ import {
   Repeat,
   Sliders,
   Cpu,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import { PRODUCTION_STEPS } from '../data/stepsData';
 import { ProjectProductionStatus } from '../types';
@@ -24,6 +26,8 @@ interface HeaderProps {
   isPlaying: boolean;
   highContrast: boolean;
   onToggleHighContrast: () => void;
+  uiScale?: 'normal' | 'large' | 'xlarge';
+  onSetScale?: (scale: 'normal' | 'large' | 'xlarge') => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -36,6 +40,8 @@ export const Header: React.FC<HeaderProps> = ({
   isPlaying,
   highContrast,
   onToggleHighContrast,
+  uiScale = 'large',
+  onSetScale,
 }) => {
   const [transportMode, setTransportMode] = useState<'PAT' | 'SONG'>('SONG');
   const [isLooping, setIsLooping] = useState(true);
@@ -67,27 +73,27 @@ export const Header: React.FC<HeaderProps> = ({
         key={step.num}
         id={`stepper-step-${step.num}`}
         onClick={() => onSelectStep(step.num)}
-        className={`flex items-center gap-1.5 py-1.5 px-2.5 rounded text-[11px] font-mono tracking-tight font-bold transition-all whitespace-nowrap border ${
+        className={`flex items-center gap-2 py-2 px-3 rounded-md text-xs sm:text-sm font-mono tracking-tight font-bold transition-all whitespace-nowrap border ${
           isActive
-            ? 'bg-gradient-to-b from-[#ff8c1a] to-[#d65f00] text-black border-[#ffa33a] shadow-[0_0_14px_rgba(255,122,0,0.5)] scale-[1.02]'
+            ? 'bg-gradient-to-b from-[#ff8c1a] to-[#d65f00] text-black border-[#ffa33a] shadow-[0_0_16px_rgba(255,122,0,0.55)] scale-[1.03]'
             : isCompleted
-            ? 'bg-[#1e242f] text-orange-200/90 hover:bg-[#28303e] border-[#384355]'
-            : 'bg-[#151921] text-stone-400 hover:bg-[#1d232e] hover:text-stone-200 border-[#2a3240]'
+            ? 'bg-[#1e242f] text-orange-200 hover:bg-[#28303e] border-[#384355]'
+            : 'bg-[#151921] text-stone-300 hover:bg-[#1d232e] hover:text-white border-[#2a3240]'
         }`}
         title={`${step.title} (Krok ${step.num})`}
       >
         <span
-          className={`w-3.5 h-3.5 rounded-sm flex items-center justify-center text-[9px] font-mono font-black shrink-0 ${
+          className={`w-4 h-4 rounded flex items-center justify-center text-[10px] font-mono font-black shrink-0 ${
             isActive
               ? 'bg-black text-[#ff8c1a]'
               : isCompleted
               ? 'bg-[#ff7a00]/20 text-[#ff8c1a]'
-              : 'bg-[#262e3b] text-stone-400'
+              : 'bg-[#262e3b] text-stone-300'
           }`}
         >
-          {isCompleted ? <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" /> : step.num}
+          {isCompleted ? <CheckCircle2 className="w-3 h-3 text-emerald-400" /> : step.num}
         </span>
-        <Icon className="w-3 h-3 shrink-0" />
+        <Icon className="w-3.5 h-3.5 shrink-0" />
         <span>{step.shortLabel}</span>
       </button>
     );
@@ -275,17 +281,49 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden sm:inline">Nowy</span>
           </button>
 
+          {/* Zoom / Accessibility Scale Controls */}
+          <div
+            id="accessibility-zoom-controls"
+            className="flex items-center bg-[#181d27] border border-[#343e50] rounded-lg p-0.5 shadow-sm"
+            title="Dopasuj rozmiar i czytelność tekstu (A- / A+)"
+          >
+            <button
+              type="button"
+              id="btn-zoom-out"
+              onClick={() => onSetScale?.(uiScale === 'xlarge' ? 'large' : 'normal')}
+              className="px-2 py-1 text-xs font-bold text-stone-300 hover:text-white hover:bg-[#252e3e] rounded transition-colors"
+              title="Zmniejsz rozmiar (A-)"
+            >
+              A-
+            </button>
+            <span
+              className="px-2 py-0.5 text-xs font-mono font-black text-[#ff9426] bg-[#0c0e13] rounded border border-[#2b3442] shadow-inner"
+              title="Aktualne powiększenie interfejsu"
+            >
+              {uiScale === 'xlarge' ? '130%' : uiScale === 'large' ? '115%' : '100%'}
+            </span>
+            <button
+              type="button"
+              id="btn-zoom-in"
+              onClick={() => onSetScale?.(uiScale === 'normal' ? 'large' : 'xlarge')}
+              className="px-2 py-1 text-xs font-bold text-stone-300 hover:text-white hover:bg-[#252e3e] rounded transition-colors"
+              title="Powiększ rozmiar (A+)"
+            >
+              A+
+            </button>
+          </div>
+
           <button
             id="btn-toggle-contrast"
             onClick={onToggleHighContrast}
-            className={`p-1 rounded border text-xs transition-colors ${
+            className={`p-1.5 rounded-lg border text-xs transition-colors ${
               highContrast
                 ? 'bg-amber-500 text-black border-amber-400'
                 : 'bg-[#1b202a] text-stone-400 border-[#2e3747] hover:text-stone-200'
             }`}
             title="Tryb wysokiego kontrastu"
           >
-            <Eye className="w-3.5 h-3.5" />
+            <Eye className="w-4 h-4" />
           </button>
         </div>
       </div>

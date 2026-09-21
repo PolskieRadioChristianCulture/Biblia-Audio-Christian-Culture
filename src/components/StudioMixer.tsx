@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Play,
   Pause,
@@ -11,9 +11,12 @@ import {
   SkipForward,
   SkipBack,
   ChevronDown,
+  ChevronUp,
   Sparkles,
+  Folder,
 } from 'lucide-react';
 import { AudioMixerSettings, DramaLine, MusicAtmosphere, RadioDramaScript } from '../types';
+import { CustomAudioUploader } from './CustomAudioUploader';
 
 interface StudioMixerProps {
   script: RadioDramaScript;
@@ -47,6 +50,14 @@ export const StudioMixer: React.FC<StudioMixerProps> = ({
   onClose,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [showCustomAudio, setShowCustomAudio] = useState(false);
+
+  const customTracksCount = [
+    settings.customMusicTrack,
+    settings.customJingleTrack,
+    settings.customIntroTrack,
+    settings.customOutroTrack,
+  ].filter(Boolean).length;
 
   // Animated visualizer
   useEffect(() => {
@@ -229,6 +240,11 @@ export const StudioMixer: React.FC<StudioMixerProps> = ({
                 }
                 className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-1.5 text-xs text-amber-200 focus:outline-none"
               >
+                {settings.customMusicTrack && (
+                  <option value="sacred_strings">
+                    ⭐ Własny plik: {settings.customMusicTrack.fileName}
+                  </option>
+                )}
                 <option value="sacred_strings">Tło: Majestatyczne Smyczki Sakralne</option>
                 <option value="temple_harp">Tło: Harfa i Akordy Świątynne</option>
                 <option value="solemn_choir">Tło: Uroczysty Chór Medytacyjny</option>
@@ -251,9 +267,95 @@ export const StudioMixer: React.FC<StudioMixerProps> = ({
               />
               <span className="flex items-center gap-1">
                 <Bell className="w-3 h-3 text-amber-400" />
-                Dżingiel stacji radiowej www.polskieradio.cc
+                {settings.customJingleTrack ? (
+                  <span>Własny dżingiel ({settings.customJingleTrack.fileName})</span>
+                ) : (
+                  <span>Dżingiel stacji radiowej www.polskieradio.cc</span>
+                )}
               </span>
             </label>
+
+            {/* Custom Audio Tracks Toggle */}
+            <div className="pt-2 border-t border-stone-800/80">
+              <button
+                type="button"
+                onClick={() => setShowCustomAudio(!showCustomAudio)}
+                className="w-full flex items-center justify-between p-2 rounded-lg bg-stone-900/80 hover:bg-stone-800 text-stone-300 hover:text-white border border-stone-800 text-xs transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Folder className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="font-semibold">Własne pliki audio (Muzyka, Dżingiel, Intro)</span>
+                  {customTracksCount > 0 && (
+                    <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold">
+                      {customTracksCount}
+                    </span>
+                  )}
+                </div>
+                {showCustomAudio ? (
+                  <ChevronUp className="w-3.5 h-3.5 text-stone-400" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5 text-stone-400" />
+                )}
+              </button>
+
+              {showCustomAudio && (
+                <div className="mt-2 p-3 bg-stone-950/80 border border-stone-800 rounded-xl space-y-3">
+                  <p className="text-[11px] text-stone-400">
+                    Wgraj własne pliki dźwiękowe (MP3 lub WAV) dla stacji Christian Culture:
+                  </p>
+                  <div className="space-y-2.5">
+                    <CustomAudioUploader
+                      compact
+                      label="Własny podkład muzyczny"
+                      trackType="music"
+                      currentTrack={settings.customMusicTrack}
+                      onTrackUploaded={(track) =>
+                        onUpdateSettings({ ...settings, customMusicTrack: track })
+                      }
+                      onTrackRemoved={() =>
+                        onUpdateSettings({ ...settings, customMusicTrack: undefined })
+                      }
+                    />
+                    <CustomAudioUploader
+                      compact
+                      label="Dżingiel stacji radiowej"
+                      trackType="jingle"
+                      currentTrack={settings.customJingleTrack}
+                      onTrackUploaded={(track) =>
+                        onUpdateSettings({ ...settings, customJingleTrack: track })
+                      }
+                      onTrackRemoved={() =>
+                        onUpdateSettings({ ...settings, customJingleTrack: undefined })
+                      }
+                    />
+                    <CustomAudioUploader
+                      compact
+                      label="Czołówka / Intro audycji"
+                      trackType="intro"
+                      currentTrack={settings.customIntroTrack}
+                      onTrackUploaded={(track) =>
+                        onUpdateSettings({ ...settings, customIntroTrack: track })
+                      }
+                      onTrackRemoved={() =>
+                        onUpdateSettings({ ...settings, customIntroTrack: undefined })
+                      }
+                    />
+                    <CustomAudioUploader
+                      compact
+                      label="Tyłówka / Outro audycji"
+                      trackType="outro"
+                      currentTrack={settings.customOutroTrack}
+                      onTrackUploaded={(track) =>
+                        onUpdateSettings({ ...settings, customOutroTrack: track })
+                      }
+                      onTrackRemoved={() =>
+                        onUpdateSettings({ ...settings, customOutroTrack: undefined })
+                      }
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Neural vs Natural Voice Selector */}
             <div className="flex items-center justify-between pt-1 border-t border-stone-800/80">

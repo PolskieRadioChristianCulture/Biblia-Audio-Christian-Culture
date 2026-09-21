@@ -81,6 +81,23 @@ export default function App() {
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [isProjectsModalOpen, setIsProjectsModalOpen] = useState<boolean>(false);
   const [highContrast, setHighContrast] = useState<boolean>(false);
+  const [uiScale, setUiScale] = useState<'normal' | 'large' | 'xlarge'>(() => {
+    try {
+      return (localStorage.getItem('biblia_audio_ui_scale') as 'normal' | 'large' | 'xlarge') || 'large';
+    } catch {
+      return 'large';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('biblia_audio_ui_scale', uiScale);
+      document.documentElement.classList.remove('scale-normal', 'scale-large', 'scale-xlarge');
+      document.documentElement.classList.add(`scale-${uiScale}`);
+    } catch (e) {
+      console.warn('Could not save ui scale:', e);
+    }
+  }, [uiScale]);
 
   // Audition Modal State
   const [auditionModal, setAuditionModal] = useState<{
@@ -516,26 +533,39 @@ export default function App() {
     const lines = currentProject.script?.lines || [];
     const clips = currentProject.generatedClips || [];
 
-    if (clips.length === 0) {
-      alert('Najpierw wygeneruj głosy AI klikając przycisk „Wygeneruj wszystkie głosy AI”.');
+    const hasAudio =
+      clips.some((c) => c.audioBase64 || c.audioUrl) ||
+      lines.some((l) => l.customAudioFile?.base64) ||
+      currentProject.mixerSettings?.customMusicTrack?.base64;
+
+    if (!hasAudio) {
+      alert('Najpierw wygeneruj głosy AI lub dodaj własne pliki audio do kwestii/miksera.');
       return;
     }
 
     setIsRenderingMaster(true);
     try {
-      // Map clips in order of lines
+      // Map clips in order of lines, prioritizing custom audio file if uploaded
       const orderedClips = lines.map((line) => {
         const foundClip = clips.find((c) => c.lineId === line.id);
+        const customAudio = line.customAudioFile;
         return {
-          base64: foundClip?.audioBase64 || '',
+          base64: customAudio?.base64 || foundClip?.audioBase64 || line.cachedAudioBase64 || '',
           pauseAfterMs: line.pauseAfterMs || 700,
         };
       });
+
       if (currentProject.mixerSettings.enableIntroOutro) {
         const intro = clips.find((clip) => clip.lineId === '__station_intro__');
         const outro = clips.find((clip) => clip.lineId === '__station_outro__');
-        if (intro?.audioBase64) orderedClips.unshift({ base64: intro.audioBase64, pauseAfterMs: 900 });
-        if (outro?.audioBase64) orderedClips.push({ base64: outro.audioBase64, pauseAfterMs: 0 });
+        const customIntro = currentProject.mixerSettings.customIntroTrack;
+        const customOutro = currentProject.mixerSettings.customOutroTrack;
+
+        const introBase64 = customIntro?.base64 || intro?.audioBase64;
+        const outroBase64 = customOutro?.base64 || outro?.audioBase64;
+
+        if (introBase64) orderedClips.unshift({ base64: introBase64, pauseAfterMs: 900 });
+        if (outroBase64) orderedClips.push({ base64: outroBase64, pauseAfterMs: 0 });
       }
 
       const res = await fetch('/api/audio/render-master', {
@@ -583,8 +613,9 @@ export default function App() {
 
       const orderedClips = (currentProject.script?.lines || []).map((line) => {
         const foundClip = currentProject.generatedClips?.find((c) => c.lineId === line.id);
+        const customAudio = line.customAudioFile;
         return {
-          base64: foundClip?.audioBase64 || '',
+          base64: customAudio?.base64 || foundClip?.audioBase64 || line.cachedAudioBase64 || '',
           pauseAfterMs: line.pauseAfterMs || 700,
         };
       });
@@ -649,6 +680,8 @@ export default function App() {
         isPlaying={isPlaying}
         highContrast={highContrast}
         onToggleHighContrast={() => setHighContrast(!highContrast)}
+        uiScale={uiScale}
+        onSetScale={setUiScale}
       />
 
       <StudioTransport
@@ -739,7 +772,13 @@ export default function App() {
             />
           )}
 
-          {currentStep === 8 && <Step8ExportPublish project={currentProject} />}
+          {currentStep === 8 && (
+            <Step8ExportPublish
+              project={currentProject}
+              onRenderMaster={handleRenderMasterAudio}
+              isRenderingMaster={isRenderingMaster}
+            />
+          )}
         </StepPageLayout>
       </main>
 

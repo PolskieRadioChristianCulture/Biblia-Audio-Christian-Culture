@@ -15,6 +15,7 @@ import {
   Sparkle,
 } from 'lucide-react';
 import { DramaCharacter, DramaLine, ProductionProject } from '../types';
+import { CustomAudioUploader } from './CustomAudioUploader';
 
 interface Step3ScriptEditorProps {
   project: ProductionProject;
@@ -344,6 +345,48 @@ export const Step3ScriptEditor: React.FC<Step3ScriptEditorProps> = ({
                       <span className="text-[11px] text-stone-400">ms</span>
                     </div>
                   </div>
+                </div>
+
+                {/* Custom Voice / Audio Recording */}
+                <div className="pt-2 border-t border-stone-800/80 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-stone-400">Ścieżka audio:</span>
+                    {line.customAudioFile ? (
+                      <span className="text-emerald-400 font-mono text-xs flex items-center gap-1 font-bold">
+                        <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                        Własny plik ({line.customAudioFile.fileName})
+                      </span>
+                    ) : (
+                      <span className="text-stone-400 font-mono text-xs">
+                        Głos syntezowany AI ({line.characterName})
+                      </span>
+                    )}
+                  </div>
+                  <CustomAudioUploader
+                    compact
+                    label="Własne audio lektora"
+                    trackType="voice"
+                    currentTrack={line.customAudioFile}
+                    onTrackUploaded={(track) => {
+                      handleUpdateLine(line.id, { customAudioFile: track });
+                      const existingClips = project.generatedClips || [];
+                      const updatedClips = existingClips.filter((c) => c.lineId !== line.id);
+                      updatedClips.push({
+                        lineId: line.id,
+                        characterId: line.characterId,
+                        audioBase64: '',
+                        audioUrl: track.audioUrl,
+                        durationSec: track.durationSec,
+                      });
+                      onUpdateProject({ generatedClips: updatedClips });
+                    }}
+                    onTrackRemoved={() => {
+                      handleUpdateLine(line.id, { customAudioFile: undefined });
+                      const existingClips = project.generatedClips || [];
+                      const updatedClips = existingClips.filter((c) => c.lineId !== line.id);
+                      onUpdateProject({ generatedClips: updatedClips });
+                    }}
+                  />
                 </div>
               </div>
             </div>

@@ -286,7 +286,33 @@ export async function downloadPublicationZipBundle(
     root.file('miniatura_youtube_1280x720.png', thumbnailBlob);
   }
 
-  // 5. Generate and trigger download
+  // 5. Package Audio Assets (Custom audio files, tracks, and masters)
+  const audioFolder = root.folder('audio');
+  if (audioFolder) {
+    if (project.mixerSettings?.customMusicTrack?.base64) {
+      audioFolder.file('podklad_muzyczny.mp3', project.mixerSettings.customMusicTrack.base64, { base64: true });
+    }
+    if (project.mixerSettings?.customIntroTrack?.base64) {
+      audioFolder.file('czolowka_intro.mp3', project.mixerSettings.customIntroTrack.base64, { base64: true });
+    }
+    if (project.mixerSettings?.customOutroTrack?.base64) {
+      audioFolder.file('tylowka_outro.mp3', project.mixerSettings.customOutroTrack.base64, { base64: true });
+    }
+    const customLines = (project.script?.lines || []).filter((l) => l.customAudioFile?.base64);
+    if (customLines.length > 0) {
+      const voiceFolder = audioFolder.folder('wlasne_glosy');
+      if (voiceFolder) {
+        customLines.forEach((l, idx) => {
+          if (l.customAudioFile?.base64) {
+            const safeName = `kwestia_${idx + 1}_${l.characterName.replace(/[^a-zA-Z0-9_-]/g, '_')}.mp3`;
+            voiceFolder.file(safeName, l.customAudioFile.base64, { base64: true });
+          }
+        });
+      }
+    }
+  }
+
+  // 6. Generate and trigger download
   onProgress?.('Kompresowanie archiwum ZIP...');
   const blob = await zip.generateAsync({ type: 'blob' });
   const url = URL.createObjectURL(blob);

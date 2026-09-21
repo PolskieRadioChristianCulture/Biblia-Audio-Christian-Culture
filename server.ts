@@ -644,7 +644,32 @@ app.post('/api/audio/render-master', async (req, res) => {
     for (let i = 0; i < clips.length; i++) {
       const clip = clips[i];
       if (clip.base64) {
-        const buffer = Buffer.from(clip.base64, 'base64');
+        let buffer = Buffer.from(clip.base64, 'base64');
+
+        // Check if buffer is an encoded audio container (WAV, MP3, OGG, FLAC) rather than raw PCM
+        const isEncoded =
+          (buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46) || // RIFF / WAV
+          (buffer[0] === 0x49 && buffer[1] === 0x44 && buffer[2] === 0x33) || // ID3 / MP3
+          (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0) || // MP3 sync word
+          (buffer[0] === 0x4f && buffer[1] === 0x67 && buffer[2] === 0x67 && buffer[3] === 0x53) || // OggS
+          (buffer[0] === 0x66 && buffer[1] === 0x4c && buffer[2] === 0x61 && buffer[3] === 0x43); // fLaC
+
+        if (isEncoded) {
+          try {
+            const inPath = path.join(tempDir, `encoded_clip_${i}.bin`);
+            const outPath = path.join(tempDir, `pcm_clip_${i}.raw`);
+            fs.writeFileSync(inPath, buffer);
+            runBinary('ffmpeg', [
+              '-y', '-i', inPath,
+              '-f', 's16le', '-ac', '1', '-ar', '24000',
+              outPath,
+            ]);
+            buffer = fs.readFileSync(outPath);
+          } catch (convErr) {
+            console.warn(`Could not convert encoded clip ${i} to PCM, using as is:`, convErr);
+          }
+        }
+
         writeStream.write(buffer);
         // 24000 samples/sec * 2 bytes/sample = 48000 bytes/sec
         const clipDuration = buffer.length / 48000;
@@ -674,19 +699,58 @@ app.post('/api/audio/render-master', async (req, res) => {
     const prodId = `prod_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const outputWavPath = path.join(tempDir, `${prodId}_radio_master.wav`);
     const outputMp3Path = path.join(tempDir, `${prodId}_podcast.mp3`);
+    const voiceWavPath = path.join(tempDir, `${prodId}_voice.wav`);
 
     const episodeTitle = assertSafeText((script && script.title) || projectTitle, 'Tytuł projektu');
     const author = 'Christian Culture';
     const album = 'Biblia Audio Christian Culture';
 
-    // 1. Process Master WAV: 48kHz, 24/16-bit stereo, -16 LUFS loudness normalized
+    // 1. Process Voice Master: 48kHz, 24/16-bit stereo
     runBinary('ffmpeg', [
       '-y', '-f', 's16le', '-ar', '24000', '-ac', '1', '-i', concatRawPath,
-      '-af', 'loudnorm=I=-16:TP=-1.0:LRA=11,aformat=channel_layouts=stereo',
-      '-ar', '48000', '-ac', '2', '-c:a', 'pcm_s24le', outputWavPath,
+      '-ar', '48000', '-ac', '2', '-c:a', 'pcm_s24le', voiceWavPath,
     ]);
 
-    // 2. Process MP3 Podcast: 44.1kHz, 192kbps stereo with complete ID3 tags
+    // 2. Mix with Custom Background Music Bed if provided
+    const customMusicBase64 = mixerSettings?.customMusicTrack?.base64;
+    if (customMusicBase64) {
+      try {
+        const musicInPath = path.join(tempDir, `music_bed_in.bin`);
+        const musicWavPath = path.join(tempDir, `music_bed_norm.wav`);
+        fs.writeFileSync(musicInPath, Buffer.from(customMusicBase64, 'base64'));
+
+        const musicVol = Math.max(0.04, Math.min(0.6, ((mixerSettings.musicVolume ?? 35) / 100) * 0.35));
+        runBinary('ffmpeg', [
+          '-y', '-stream_loop', '-1', '-i', musicInPath,
+          '-t', `${Math.ceil(totalDurationSec + 3)}`,
+          '-filter:a', `volume=${musicVol.toFixed(3)}`,
+          '-ar', '48000', '-ac', '2', musicWavPath,
+        ]);
+
+        // Blend Voice + Music Bed with loudnorm to -16 LUFS
+        runBinary('ffmpeg', [
+          '-y', '-i', voiceWavPath, '-i', musicWavPath,
+          '-filter_complex', `[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=2[mixed];[mixed]loudnorm=I=-16:TP=-1.0:LRA=11`,
+          '-ar', '48000', '-ac', '2', '-c:a', 'pcm_s24le', outputWavPath,
+        ]);
+      } catch (musicErr) {
+        console.warn('Music blending failed, falling back to speech only:', musicErr);
+        runBinary('ffmpeg', [
+          '-y', '-i', voiceWavPath,
+          '-af', 'loudnorm=I=-16:TP=-1.0:LRA=11',
+          '-ar', '48000', '-ac', '2', '-c:a', 'pcm_s24le', outputWavPath,
+        ]);
+      }
+    } else {
+      // Pure speech master normalized to -16 LUFS
+      runBinary('ffmpeg', [
+        '-y', '-i', voiceWavPath,
+        '-af', 'loudnorm=I=-16:TP=-1.0:LRA=11',
+        '-ar', '48000', '-ac', '2', '-c:a', 'pcm_s24le', outputWavPath,
+      ]);
+    }
+
+    // 3. Process MP3 Podcast: 44.1kHz, 192kbps stereo with complete ID3 tags
     runBinary('ffmpeg', [
       '-y', '-i', outputWavPath, '-ar', '44100', '-ac', '2', '-b:a', '192k',
       '-metadata', `title=${episodeTitle}`, '-metadata', `artist=${author}`,
