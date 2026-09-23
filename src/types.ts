@@ -144,6 +144,10 @@ export interface AudioMixerSettings {
   radioTubeWarmth?: boolean;
   wordClarityPriority: boolean; // "Czytelność Słowa" (ducking muzyki/sfx pod mową)
   enableIntroOutro?: boolean;
+  // 3-band EQ (saved to project, applied at master render)
+  eqHighPassHz?: number;   // 60–120 Hz, default 80
+  eqMidGainDb?: number;    // −6..+6 dB presence at 3kHz, default +2
+  eqAirGainDb?: number;    // 0..+4 dB air shelf at 12kHz, default +1
 }
 
 export interface RadioDramaScript {

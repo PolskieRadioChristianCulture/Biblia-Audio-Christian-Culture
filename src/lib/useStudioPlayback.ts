@@ -40,5 +40,6 @@ export function useStudioPlayback(project?: ProductionProject) {
       studioPlaybackEngine.setTrackVolume(track, vol),
     setSpeechRate: (rate: number) => studioPlaybackEngine.setSpeechRate(rate),
     toggleMute: (track: 'voice' | 'music' | 'fx') => studioPlaybackEngine.toggleMute(track),
+    getAnalyserData: (): Uint8Array | null => studioPlaybackEngine.getAnalyserData(),
   };
 }

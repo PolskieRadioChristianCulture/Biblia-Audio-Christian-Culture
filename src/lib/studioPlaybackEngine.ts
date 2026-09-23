@@ -36,6 +36,11 @@ class StudioPlaybackEngine {
   private audioCtx: AudioContext | null = null;
   private synthNodes: { osc1: OscillatorNode; osc2: OscillatorNode; gain: GainNode } | null = null;
 
+  // Real-time AnalyserNode for FFT visualizer
+  private analyserNode: AnalyserNode | null = null;
+  private mediaSource: MediaElementAudioSourceNode | null = null;
+  private analyserData: Uint8Array = new Uint8Array(64);
+
   private isPlaying = false;
   private isPaused = false;
   private currentLineIndex = 0;
@@ -58,6 +63,7 @@ class StudioPlaybackEngine {
   constructor() {
     this.startMeterLoop();
   }
+
 
   public setProject(project: ProductionProject) {
     const prevId = this.project?.id;
@@ -311,6 +317,14 @@ class StudioPlaybackEngine {
     this.notify();
   }
 
+  public getAnalyserData(): Uint8Array | null {
+    if (this.analyserNode) {
+      this.analyserNode.getByteFrequencyData(this.analyserData as any);
+      return this.analyserData;
+    }
+    return null;
+  }
+
   // --- Line Sequencing ---
 
   private playLine(index: number) {
@@ -341,6 +355,24 @@ class StudioPlaybackEngine {
     if (audioSource && !this.mutedTracks.voice) {
       if (!this.voiceAudio) {
         this.voiceAudio = new Audio();
+        // Wire once through Web Audio for real FFT metering
+        try {
+          if (!this.audioCtx) {
+            const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+            this.audioCtx = new AudioCtxClass();
+          }
+          if (this.audioCtx.state === 'suspended') {
+            this.audioCtx.resume();
+          }
+          this.mediaSource = this.audioCtx.createMediaElementSource(this.voiceAudio);
+          this.analyserNode = this.audioCtx.createAnalyser();
+          this.analyserNode.fftSize = 128;
+          this.analyserData = new Uint8Array(this.analyserNode.frequencyBinCount);
+          this.mediaSource.connect(this.analyserNode);
+          this.analyserNode.connect(this.audioCtx.destination);
+        } catch (e) {
+          console.warn('Web Audio metering unavailable:', e);
+        }
       }
       this.voiceAudio.src = audioSource;
       const customRate = line.tempoMultiplier || 1.0;
@@ -508,18 +540,20 @@ class StudioPlaybackEngine {
 
   private startMeterLoop() {
     const update = () => {
-      if (this.isPlaying && !this.isPaused) {
-        // Active playback meter levels (scaled 1..10)
-        const baseLevel = 5 + Math.floor(Math.random() * 4); // 5..8
-        const flutter = Math.floor((Math.random() - 0.5) * 2);
-        this.meterL = Math.max(2, Math.min(9, baseLevel + flutter));
-        this.meterR = Math.max(2, Math.min(9, baseLevel - flutter));
-      } else {
-        // Idle / decaying levels
+      if (this.analyserNode && this.isPlaying && !this.isPaused) {
+        this.analyserNode.getByteFrequencyData(this.analyserData as any);
+        const half = Math.floor(this.analyserData.length / 2);
+        let sumL = 0, sumR = 0;
+        for (let i = 0; i < half; i++) sumL += this.analyserData[i];
+        for (let i = half; i < this.analyserData.length; i++) sumR += this.analyserData[i];
+        // Map 0..255 average to 0..10 scale
+        this.meterL = Math.min(10, Math.round((sumL / half) / 25.5));
+        this.meterR = Math.min(10, Math.round((sumR / (this.analyserData.length - half)) / 25.5));
+      } else if (!this.isPlaying || this.isPaused) {
+        // Decay to zero when idle/paused
         this.meterL = Math.max(0, this.meterL - 1);
         this.meterR = Math.max(0, this.meterR - 1);
       }
-
       this.meterAnimFrame = requestAnimationFrame(update);
     };
     this.meterAnimFrame = requestAnimationFrame(update);

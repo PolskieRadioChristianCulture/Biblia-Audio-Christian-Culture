@@ -12,6 +12,8 @@ import { StepPageLayout } from './components/StepPageLayout';
 import { ProjectsManagerModal } from './components/ProjectsManagerModal';
 import { AuditionModal } from './components/AuditionModal';
 import { StudioTransport } from './components/StudioTransport';
+import { StudioMixer } from './components/StudioMixer';
+import { useStudioPlayback } from './lib/useStudioPlayback';
 import { DEMO_SCRIPTS } from './data/presets';
 import { DEFAULT_CHARACTER_PROFILES } from './data/videoPresets';
 import { createDefaultVideoSettings, calculateSubtitleCues } from './lib/videoUtils';
@@ -167,6 +169,9 @@ export default function App() {
 
   const currentProject =
     projects.find((p) => p.id === currentProjectId) || projects[0];
+
+  // Real-time playback state (used by StudioMixer right panel)
+  const playback = useStudioPlayback(currentProject);
 
   const updateCurrentProject = (updatedFields: Partial<ProductionProject>) => {
     setProjects((prev) =>
@@ -699,92 +704,126 @@ export default function App() {
 
       {/* Main Studio Viewport: One Step = One Dedicated Page */}
       <main className="studio-workspace flex-1 max-w-[1600px] w-full mx-auto px-3 sm:px-5 py-5">
-        <StepPageLayout
-          currentStep={currentStep}
-          project={currentProject}
-          onSelectStep={(step) => setCurrentStep(step)}
-        >
-          {currentStep === 1 && (
-            <Step1TextInput
+        <div className="flex gap-5 items-start">
+          {/* Left column — step content */}
+          <div className="flex-1 min-w-0">
+            <StepPageLayout
+              currentStep={currentStep}
               project={currentProject}
-              onUpdateProject={updateCurrentProject}
-              onProceedToAnalyze={() => setCurrentStep(2)}
-            />
-          )}
+              onSelectStep={(step) => setCurrentStep(step)}
+            >
+              {currentStep === 1 && (
+                <Step1TextInput
+                  project={currentProject}
+                  onUpdateProject={updateCurrentProject}
+                  onProceedToAnalyze={() => setCurrentStep(2)}
+                />
+              )}
 
-          {currentStep === 2 && (
-            <Step2Analyze
-              project={currentProject}
-              onUpdateProject={updateCurrentProject}
-              onProceedToScript={() => setCurrentStep(3)}
-            />
-          )}
+              {currentStep === 2 && (
+                <Step2Analyze
+                  project={currentProject}
+                  onUpdateProject={updateCurrentProject}
+                  onProceedToScript={() => setCurrentStep(3)}
+                />
+              )}
 
-          {currentStep === 3 && (
-            <Step3ScriptEditor
-              project={currentProject}
-              onUpdateProject={updateCurrentProject}
-              onAuditionLine={handleAuditionLine}
-              onProceedToCasting={() => setCurrentStep(4)}
-            />
-          )}
+              {currentStep === 3 && (
+                <Step3ScriptEditor
+                  project={currentProject}
+                  onUpdateProject={updateCurrentProject}
+                  onAuditionLine={handleAuditionLine}
+                  onProceedToCasting={() => setCurrentStep(4)}
+                />
+              )}
 
-          {currentStep === 4 && (
-            <Step4Casting
-              project={currentProject}
-              onUpdateProject={updateCurrentProject}
-              onAuditionVoice={handleAuditionVoice}
-              onProceedToDirection={() => setCurrentStep(5)}
-            />
-          )}
+              {currentStep === 4 && (
+                <Step4Casting
+                  project={currentProject}
+                  onUpdateProject={updateCurrentProject}
+                  onAuditionVoice={handleAuditionVoice}
+                  onProceedToDirection={() => setCurrentStep(5)}
+                />
+              )}
 
-          {currentStep === 5 && (
-            <Step5Direction
-              project={currentProject}
-              onUpdateProject={updateCurrentProject}
-              onProceedToTimeline={() => setCurrentStep(6)}
-              onAuditionLine={handleAuditionLine}
-            />
-          )}
+              {currentStep === 5 && (
+                <Step5Direction
+                  project={currentProject}
+                  onUpdateProject={updateCurrentProject}
+                  onProceedToTimeline={() => setCurrentStep(6)}
+                  onAuditionLine={handleAuditionLine}
+                />
+              )}
 
-          {currentStep === 6 && (
-            <Step6Timeline
-              project={currentProject}
-              onUpdateProject={updateCurrentProject}
-              onProceedToVideo={() => setCurrentStep(7)}
-              onProceedToExport={() => setCurrentStep(8)}
-              onSynthesizeAllVoices={handleSynthesizeAllVoices}
-              onRenderMasterAudio={handleRenderMasterAudio}
-              isSynthesizing={isSynthesizing}
-              synthesisProgress={synthesisProgress}
-              isRenderingMaster={isRenderingMaster}
-              ttsEngine={ttsEngine}
-              onSetTtsEngine={setTtsEngine}
-              onAuditionLine={handleAuditionLine}
-              onSynthesizeSingleLine={handleSynthesizeSingleLine}
-              onClearTtsCache={handleClearTtsCache}
-            />
-          )}
+              {currentStep === 6 && (
+                <Step6Timeline
+                  project={currentProject}
+                  onUpdateProject={updateCurrentProject}
+                  onProceedToVideo={() => setCurrentStep(7)}
+                  onProceedToExport={() => setCurrentStep(8)}
+                  onSynthesizeAllVoices={handleSynthesizeAllVoices}
+                  onRenderMasterAudio={handleRenderMasterAudio}
+                  isSynthesizing={isSynthesizing}
+                  synthesisProgress={synthesisProgress}
+                  isRenderingMaster={isRenderingMaster}
+                  ttsEngine={ttsEngine}
+                  onSetTtsEngine={setTtsEngine}
+                  onAuditionLine={handleAuditionLine}
+                  onSynthesizeSingleLine={handleSynthesizeSingleLine}
+                  onClearTtsCache={handleClearTtsCache}
+                />
+              )}
 
-          {currentStep === 7 && (
-            <Step7VideoStudio
-              project={currentProject}
-              onUpdateProject={updateCurrentProject}
-              onRenderVideo={handleRenderVideo}
-              isRendering={isRenderingVideo}
-              renderProgress={videoRenderProgress}
-              onProceedToExport={() => setCurrentStep(8)}
-            />
-          )}
+              {currentStep === 7 && (
+                <Step7VideoStudio
+                  project={currentProject}
+                  onUpdateProject={updateCurrentProject}
+                  onRenderVideo={handleRenderVideo}
+                  isRendering={isRenderingVideo}
+                  renderProgress={videoRenderProgress}
+                  onProceedToExport={() => setCurrentStep(8)}
+                />
+              )}
 
-          {currentStep === 8 && (
-            <Step8ExportPublish
-              project={currentProject}
-              onRenderMaster={handleRenderMasterAudio}
-              isRenderingMaster={isRenderingMaster}
+              {currentStep === 8 && (
+                <Step8ExportPublish
+                  project={currentProject}
+                  onRenderMaster={handleRenderMasterAudio}
+                  isRenderingMaster={isRenderingMaster}
+                />
+              )}
+            </StepPageLayout>
+          </div>
+
+          {/* Right column — Permanent DAW Studio Mixer Panel (lg screens) */}
+          <div className="hidden lg:block w-[320px] shrink-0">
+            <StudioMixer
+              script={currentProject.script}
+              settings={currentProject.mixerSettings || {
+                voiceVolume: 1,
+                musicVolume: 0.35,
+                sfxVolume: 0.4,
+                backgroundMusic: 'sacred_strings',
+                includeStationJingle: true,
+                speechEngine: 'ai_neural',
+                warmBroadcastFilter: false,
+                speechRate: 1.0,
+              }}
+              onUpdateSettings={(newSettings) => updateCurrentProject({ mixerSettings: newSettings })}
+              isPlaying={playback.isPlaying}
+              isPaused={playback.isPaused}
+              currentLineIndex={playback.currentLineIndex}
+              onPlay={() => playback.play()}
+              onPause={() => playback.pause()}
+              onStop={() => playback.stop()}
+              onNextLine={() => playback.next()}
+              onPrevLine={() => playback.prev()}
+              meterL={playback.meterL}
+              meterR={playback.meterR}
+              analyserData={playback.getAnalyserData()}
             />
-          )}
-        </StepPageLayout>
+          </div>
+        </div>
       </main>
 
       {/* Footer Branding */}
